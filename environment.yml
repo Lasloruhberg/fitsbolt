@@ -1,0 +1,15 @@
+name: al
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.8
+  - numpy
+  - astropy
+  - scipy
+  - scikit-image
+  - pip
+  - pip:
+    - setuptools
+    - wheel
+    - build
