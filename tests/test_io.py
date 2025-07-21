@@ -216,14 +216,10 @@ class TestImageIO:
         rgba_data[10:40, 10:40, 3] = 255  # Alpha
 
         processed = process_image(rgba_data, test_config, convert_to_rgb=True)
-        assert (
-            processed.shape
-            == processed.shape
-            == (
-                test_config.size[0],
-                test_config.size[1],
-                3,
-            )
+        assert processed.shape == (
+            test_config.size[0],
+            test_config.size[1],
+            3,
         )  # Should be converted to RGB  # Should drop alpha channel
         assert processed.dtype == np.uint8
 
@@ -339,3 +335,227 @@ class TestImageIO:
         assert np.all(
             rgb_img[: height // 2, : width // 2, 1] == 0
         ), "Red channel should have no green"
+
+    def test_fits_loading_parallel_with_extension_int(self, test_config):
+        """Test parallel loading of FITS files with extension index 0."""
+        test_config.fits_extension = 0
+        file_paths = [self.fits_path, self.multi_fits_path]
+
+        results = load_and_process_images(
+            file_paths, cfg=test_config, num_workers=2, show_progress=False
+        )
+
+        assert len(results) == 2
+        for filepath, image in results:
+            assert filepath in file_paths
+            assert image.shape[2] == 3  # Should be converted to RGB
+            assert image.dtype == np.uint8
+
+    def test_fits_extension_primary(self, test_config):
+        """Test reading FITS file with 'PRIMARY' extension name."""
+        # Set the extension to 'PRIMARY' which should be equivalent to index 0
+        test_config.fits_extension = "PRIMARY"
+
+        try:
+            img = _read_image(self.fits_path, test_config)
+            assert img.ndim >= 2
+            assert np.issubdtype(img.dtype, np.floating)
+        except KeyError:
+            # Some FITS files might not have named extensions
+            pytest.skip("FITS file does not have a 'PRIMARY' named extension")
+
+    def test_greyscale_fits_to_rgb_mapping(self, test_config):
+        """Test conversion of greyscale FITS data to RGB."""
+        # Load a single-channel FITS file
+        test_config.fits_extension = 0
+
+        # First get the raw grayscale data
+        gray_fits = _read_image(self.fits_path, test_config)
+        assert gray_fits.ndim == 2, "Test requires a 2D (grayscale) FITS image"
+
+        # Now process with RGB conversion
+        rgb_fits = process_image(gray_fits, test_config, convert_to_rgb=True)
+
+        # Verify RGB conversion
+        assert rgb_fits.shape[2] == 3, "Grayscale FITS should be converted to RGB"
+        assert rgb_fits.dtype == np.uint8, "Processed image should be uint8"
+
+        # All RGB channels should be equal for a grayscale source
+        r_channel = rgb_fits[:, :, 0]
+        g_channel = rgb_fits[:, :, 1]
+        b_channel = rgb_fits[:, :, 2]
+
+        # Channels should be identical or very similar
+        assert np.allclose(r_channel, g_channel, rtol=1e-5, atol=1)
+        assert np.allclose(r_channel, b_channel, rtol=1e-5, atol=1)
+
+    def test_fits_extension_list_truncation(self, test_config):
+        """Test that extension list [0,1,2,3] drops the last channel when converting to RGB."""
+        # Create a FITS file with 4 extensions for this test
+        # First, create 4-channel test data with HDUs that have actual extensions
+        primary_hdu = fits.PrimaryHDU(np.zeros((50, 50), dtype=np.float32))
+        hdu_list = fits.HDUList([primary_hdu])
+
+        # Add 3 image extensions with different data
+        for i in range(3):
+            ext_data = np.zeros((50, 50), dtype=np.float32)
+            ext_data[10:40, 10:40] = i + 1  # Each extension has different values
+            ext_hdu = fits.ImageHDU(ext_data)
+            ext_hdu.header["EXTNAME"] = f"EXT{i + 1}"
+            hdu_list.append(ext_hdu)
+
+        # Create a temporary FITS file with multiple extensions
+        temp_fits_path = os.path.join(self.test_dir, "four_channel.fits")
+        hdu_list.writeto(temp_fits_path, overwrite=True)
+
+        # Test 1: Using all extensions by index
+        test_config.fits_extension = [0, 1, 2, 3]
+
+        # This should fail as extension 3 doesn't exist (we have 0,1,2)
+        with pytest.raises(IndexError, match="out of bounds"):
+            _read_image(temp_fits_path, test_config)
+
+        # Try with the extensions that actually exist
+        test_config.fits_extension = [0, 1, 2]
+        img = _read_image(temp_fits_path, test_config)
+
+        # The shape should be (50, 50, 3) after reading
+        assert img.shape == (50, 50, 3), "Should read all 3 channels"
+
+        # Now process with RGB conversion
+        processed = process_image(img, test_config, convert_to_rgb=True)
+
+        # After processing, it should still be (50, 50, 3) as we have exactly 3 channels
+        assert processed.shape == (
+            50,
+            50,
+            3,
+        ), "Should maintain 3 channels during RGB conversion"
+
+        # Test 2: Now create a file with exactly 4 extensions to test truncation
+        # Add one more extension
+        ext_data = np.zeros((50, 50), dtype=np.float32)
+        ext_data[10:40, 10:40] = 4  # Fourth extension
+        ext_hdu = fits.ImageHDU(ext_data)
+        ext_hdu.header["EXTNAME"] = "EXT4"
+        hdu_list.append(ext_hdu)
+
+        # Write the updated file with 4 extensions
+        temp_fits_path2 = os.path.join(self.test_dir, "four_ext_channel.fits")
+        hdu_list.writeto(temp_fits_path2, overwrite=True)
+
+        # Set config to use all 4 extensions
+        test_config.fits_extension = [0, 1, 2, 3]
+
+        # This should work now
+        img_four = _read_image(temp_fits_path2, test_config)
+
+        # The shape should be (50, 50, 4) after reading
+        assert img_four.shape == (50, 50, 4), "Should read all 4 channels"
+
+        # Now process with RGB conversion
+        processed_four = process_image(img_four, test_config, convert_to_rgb=True)
+
+        # After processing, it should be (50, 50, 3) - dropping the last channel
+        assert processed_four.shape == (
+            50,
+            50,
+            3,
+        ), "Should drop the 4th channel during RGB conversion"
+
+        # Check that only the first 3 channels were kept
+        for i in range(3):
+            expected_val = i + 1  # Based on our test data pattern
+            assert np.any(
+                np.isclose(processed_four[:, :, i], expected_val, rtol=1e-5, atol=1)
+            ), f"Channel {i} should have data"
+
+        # Test 3: Try with extension names instead of indices
+        test_config.fits_extension = ["PRIMARY", "EXT1", "EXT2"]
+        img_named = _read_image(temp_fits_path2, test_config)
+        assert img_named.shape == (50, 50, 3), "Should read named extensions"
+
+        # Test error case - non-existent extension name
+        test_config.fits_extension = ["PRIMARY", "EXT1", "NONEXISTENT"]
+        with pytest.raises(KeyError, match="not found"):
+            _read_image(temp_fits_path2, test_config)
+
+    def test_fits_extension_list_with_two_extensions(self, test_config):
+        """Test handling of a list with two extensions and error cases."""
+        # Create a FITS file with named extensions
+        primary_hdu = fits.PrimaryHDU(np.zeros((50, 50), dtype=np.float32))
+        primary_hdu.header["EXTNAME"] = "PRIMARY"
+
+        ext1_data = np.zeros((50, 50), dtype=np.float32)
+        ext1_data[10:40, 10:40] = 1.0  # First extension
+        ext1_hdu = fits.ImageHDU(ext1_data)
+        ext1_hdu.header["EXTNAME"] = "RED"
+
+        ext2_data = np.zeros((50, 50), dtype=np.float32)
+        ext2_data[20:30, 20:30] = 2.0  # Second extension
+        ext2_hdu = fits.ImageHDU(ext2_data)
+        ext2_hdu.header["EXTNAME"] = "GREEN"
+
+        # Create a temporary FITS file with two extensions
+        hdu_list = fits.HDUList([primary_hdu, ext1_hdu, ext2_hdu])
+        temp_fits_path = os.path.join(self.test_dir, "two_ext_channel.fits")
+        hdu_list.writeto(temp_fits_path, overwrite=True)
+
+        try:
+            # Test 1: Using two extensions by index
+            test_config.fits_extension = [0, 1]
+            img = _read_image(temp_fits_path, test_config)
+
+            # Image should have shape (50, 50, 2) after reading
+            assert img.shape == (50, 50, 2), "Should read both channels into shape (H, W, 2)"
+
+            # Process with RGB conversion - should work by filling in a zero channel
+            processed = process_image(img, test_config, convert_to_rgb=True)
+
+            # Check that we have 3 channels now
+            assert processed.shape == (50, 50, 3), "Should have 3 channels after RGB conversion"
+
+            # The third channel should be all zeros or very close to zero
+            assert np.allclose(
+                processed[:, :, 2], 0, atol=1
+            ), "Third channel should be zero or close to zero"
+
+            # Test 2: Using extension names
+            test_config.fits_extension = ["PRIMARY", "RED"]
+            img_named = _read_image(temp_fits_path, test_config)
+            assert img_named.shape == (50, 50, 2), "Should read named extensions"
+
+            # Test 3: Test error with non-existent extension
+            test_config.fits_extension = [0, 99]  # Index 99 doesn't exist
+            with pytest.raises(IndexError, match="out of bounds"):
+                _read_image(temp_fits_path, test_config)
+
+            # Test 4: Test error with non-existent named extension
+            test_config.fits_extension = ["PRIMARY", "NONEXISTENT"]
+            with pytest.raises(KeyError, match="not found"):
+                _read_image(temp_fits_path, test_config)
+
+            # Test 5: Test with extensions that have different shapes (should fail)
+            # Create a new HDU with different shape
+            odd_shape_data = np.zeros((40, 60), dtype=np.float32)  # Different shape
+            odd_shape_hdu = fits.ImageHDU(odd_shape_data)
+            odd_shape_hdu.header["EXTNAME"] = "ODD_SHAPE"
+
+            # Add to a new HDU list
+            odd_hdu_list = fits.HDUList([primary_hdu, ext1_hdu, odd_shape_hdu])
+            odd_fits_path = os.path.join(self.test_dir, "odd_shape.fits")
+            odd_hdu_list.writeto(odd_fits_path, overwrite=True)
+
+            # Try to load extensions with different shapes
+            test_config.fits_extension = [0, 1, 2]
+            with pytest.raises(ValueError, match="different shapes"):
+                _read_image(odd_fits_path, test_config)
+
+        finally:
+            # Clean up temporary files
+            for path in [temp_fits_path, odd_fits_path if "odd_fits_path" in locals() else None]:
+                if path is not None and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except (OSError, PermissionError):
+                        pass
