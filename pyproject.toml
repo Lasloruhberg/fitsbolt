@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "astro_loader"
+version = "0.1.0"
+description = "Python module to load astronomical images"
+readme = "README.md"
+license = "GPL_3.0-only"
+license-files = ["LICENSE"]
+license = { file = "LICENSE" }
+authors = [{ name = "Laslo E. Ruhberg"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GPL-3.0-only",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "astropy",
+    "loguru",
+    "numpy",
+    "scikit-image",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "black", "flake8"]
+
+[project.scripts]
+astro_loader = "astro_loader.image_loader:main"
+
+[project.urls]
+Homepage = "https://github.com/Lasloruhberg/astro_loader"
+Repository = "https://github.com/Lasloruhberg/astro_loader"
+Issues = "https://github.com/Lasloruhberg/astro_loader/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["astro_loader*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
