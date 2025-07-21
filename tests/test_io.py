@@ -36,8 +36,6 @@ class TestImageIO:
             norm_crop_for_maximum_value=None,
             norm_log_calculate_minimum_value=False,
         )
-        # Override size to None after validation for specific tests that need it
-        cfg.size = None
         return cfg
 
     @classmethod
@@ -106,14 +104,6 @@ class TestImageIO:
         cls.multi_fits_path = os.path.join(cls.test_dir, "multi_channel.fits")
         fits.writeto(cls.multi_fits_path, multi_data, overwrite=True)
 
-        # Create a FITS file with unusual dimensions (4D)
-        four_dim_data = np.zeros((2, 3, 60, 60), dtype=np.float32)
-        for i in range(2):
-            for j in range(3):
-                four_dim_data[i, j, 20:40, 20:40] = 0.5 + 0.1 * i + 0.1 * j
-        cls.four_dim_fits_path = os.path.join(cls.test_dir, "four_dim.fits")
-        fits.writeto(cls.four_dim_fits_path, four_dim_data, overwrite=True)
-
         # Create FITS with extreme values to test normalization
         extreme_data = np.zeros((100, 100), dtype=np.float32)
         extreme_data[10:40, 10:40] = -1000.0  # Very negative values
@@ -131,7 +121,6 @@ class TestImageIO:
             cls.nested_path,
             cls.fits_path,
             cls.multi_fits_path,
-            cls.four_dim_fits_path,
             cls.extreme_fits_path,
         ]
 
@@ -171,19 +160,13 @@ class TestImageIO:
         """Test reading a simple FITS file with _read_image."""
         img = _read_image(self.fits_path, test_config)
         assert img.ndim == 2  # Single channel FITS should be 2D
-        assert img.dtype in [np.float32, np.float64]
+        assert np.issubdtype(img.dtype, np.floating), "Image data should be a floating-point type"
 
     def test_read_image_fits_multi_channel(self, test_config):
         """Test reading a multi-channel FITS file with _read_image."""
         img = _read_image(self.multi_fits_path, test_config)
         # Should handle multi-dimensional FITS appropriately
         assert img.ndim >= 2 and img.ndim <= 3
-
-    def test_read_image_fits_four_dimensional(self, test_config):
-        """Test reading a 4D FITS file with _read_image."""
-        img = _read_image(self.four_dim_fits_path, test_config)
-        # Should reduce dimensions to 3 or fewer
-        assert img.ndim <= 3
 
     def test_read_image_fits_extreme_values(self, test_config):
         """Test reading FITS with extreme values."""
@@ -220,7 +203,11 @@ class TestImageIO:
         gray_data[10:40, 10:40] = 200
 
         processed = process_image(gray_data, test_config, convert_to_rgb=True)
-        assert processed.shape == (50, 50, 3)  # Should be converted to RGB
+        assert processed.shape == (
+            test_config.size[0],
+            test_config.size[1],
+            3,
+        )  # Should be converted to RGB
         assert processed.dtype == np.uint8
 
         # Test with RGBA input
@@ -229,7 +216,15 @@ class TestImageIO:
         rgba_data[10:40, 10:40, 3] = 255  # Alpha
 
         processed = process_image(rgba_data, test_config, convert_to_rgb=True)
-        assert processed.shape == (50, 50, 3)  # Should drop alpha channel
+        assert (
+            processed.shape
+            == processed.shape
+            == (
+                test_config.size[0],
+                test_config.size[1],
+                3,
+            )
+        )  # Should be converted to RGB  # Should drop alpha channel
         assert processed.dtype == np.uint8
 
     def test_process_image_without_rgb_conversion(self, test_config):

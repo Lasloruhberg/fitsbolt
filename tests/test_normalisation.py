@@ -22,6 +22,14 @@ from astro_loader.normalisation.normalisation import (
 from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
 
 
+@pytest.fixture
+def caplog(caplog):
+    """Configure loguru to use the caplog handler"""
+    handler_id = logger.add(caplog.handler)
+    yield caplog
+    logger.remove(handler_id)
+
+
 def get_test_config(method=NormalisationMethod.CONVERSION_ONLY):
     """Returns a test config with the specified normalisation method"""
     cfg = create_config(
@@ -45,14 +53,6 @@ def get_asinh_test_config(asinh_scale=[1.0, 1.0, 1.0], asinh_clip=[99.0, 99.0, 9
     if asinh_clip is not None:
         cfg.normalisation.asinh_clip = asinh_clip
     return cfg
-
-
-@pytest.fixture
-def caplog(caplog):
-    """Configure loguru to use the caplog handler"""
-    handler_id = logger.add(caplog.handler)
-    yield caplog
-    logger.remove(handler_id)
 
 
 def create_gradient_rgb(height=16, width=16, dtype=np.uint8):
@@ -214,7 +214,7 @@ class TestNormalisationUtilities:
         min_val = _compute_min_value(image, cfg)
         assert min_val == -5.0
 
-    def test_expand(self):
+    def test_expand(self, caplog):
         """Test _expand function for asinh normalisation."""
         # Test with scalar
         result = _expand(0.5, 3)
@@ -227,8 +227,11 @@ class TestNormalisationUtilities:
         np.testing.assert_array_equal(result, expected)
 
         # Test with wrong length
-        with pytest.raises(ValueError):
-            _expand([1.0, 2.0], 3)
+        # Check logs for warnings
+        caplog.clear()
+        _expand([1.0, 2.0], 3)
+        assert "| WARNING  | astro_loader.normalisation.normalisation:_expand:" in caplog.text
+        caplog.clear()
 
 
 class TestNormalisationMethods:
