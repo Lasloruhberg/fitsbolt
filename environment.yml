@@ -8,6 +8,11 @@ dependencies:
   - astropy
   - scipy
   - scikit-image
+  - tqdm
+  - loguru
+  - pytest
+  - pillow
+  - dotmap
   - pip
   - pip:
     - setuptools

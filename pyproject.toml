@@ -7,8 +7,6 @@ name = "astro_loader"
 version = "0.1.0"
 description = "Python module to load astronomical images"
 readme = "README.md"
-license = "GPL_3.0-only"
-license-files = ["LICENSE"]
 license = { file = "LICENSE" }
 authors = [{ name = "Laslo E. Ruhberg"}]
 classifiers = [
