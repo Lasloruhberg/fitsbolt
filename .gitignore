@@ -155,6 +155,8 @@ cython_debug/
 
 # actual repository files
 data
+legacy_code/*
+legacy_tests/*
 tests/test_output
 my_notebooks
 tests/test_data/*
