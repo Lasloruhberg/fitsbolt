@@ -217,7 +217,9 @@ def _read_image(filepath, cfg):
 
     return image
 
-def process_image(image,
+
+def process_image(
+    image,
     cfg,
     convert_to_rgb=True,
     image_source="array",
@@ -272,22 +274,22 @@ def process_image(image,
         logger.error(f"Error processing image {image_source}: {e}")
         raise e
 
-def _load_image(filepath, cfg):
+
+def _load_image(filepath, cfg, convert_to_rgb=True):
     try:
         # Read raw image data
         image = _read_image(filepath, cfg)
 
         # Process the image using the centralized processing function
-        return process_image(image, cfg, filepath)
+        return process_image(image, cfg, convert_to_rgb=convert_to_rgb, image_source=filepath)
 
     except Exception as e:
         logger.error(f"Error reading image {filepath}: {e}")
         raise e
 
 
-
 def load_and_process_images(
-    filepaths, 
+    filepaths,
     cfg=None,
     output_dtype=np.uint8,
     size=[224, 224],
@@ -304,7 +306,7 @@ def load_and_process_images(
     norm_asinh_clip=[99.8, 99.8, 99.8],
     desc="Loading images",
     show_progress=True,
-    ):
+):
     """Load and process multiple images in parallel.
 
     Args:
@@ -318,12 +320,15 @@ def load_and_process_images(
                                                - A list of integers or strings to combine multiple extensions
                                                Uses the first extension (0) if None.
         interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
-        normalisation_method (NormalisationMethod, optional): Normalisation method to use. Defaults to NormalisationMethod.CONVERSION_ONLY.
-        channel_combination (dict, optional): Dictionary defining how to combine FITS extensions into output channels. Defaults to None.
+        normalisation_method (NormalisationMethod, optional): Normalisation method to use.
+                                                Defaults to NormalisationMethod.CONVERSION_ONLY.
+        channel_combination (dict, optional): Dictionary defining how to combine FITS extensions into output channels.
+                                                Defaults to None.
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
         norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None.
         norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None.
-        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling (normally defaults to 0). Defaults to False.
+        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
+                                                (normally defaults to 0). Defaults to False.
         norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
         norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
         norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
@@ -331,11 +336,11 @@ def load_and_process_images(
         size (tuple, optional): Size to resize images to (height, width)
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
-        
+
     Returns:
         list: List of (filepath, image) tuples for successfully loaded images
     """
-    
+
     if cfg is None:
         cfg = create_config(
             output_dtype=output_dtype,
@@ -351,11 +356,10 @@ def load_and_process_images(
             norm_crop_for_maximum_value=norm_crop_for_maximum_value,
             norm_asinh_scale=norm_asinh_scale,
             norm_asinh_clip=norm_asinh_clip,
-            )
+        )
     else:
-        cfg = validate_config(cfg)
-        
-    
+        validate_config(cfg)
+
     logger.debug(
         f"Loading {len(filepaths)} images in parallel with normalisation: {cfg.normalisation_method}"
     )

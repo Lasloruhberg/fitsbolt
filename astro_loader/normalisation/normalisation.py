@@ -172,7 +172,9 @@ def _conversiononly_normalisation(data, cfg):
             # check for uint16 as a simply divison converts
             if data.dtype == np.uint16:
                 # convert to uint8
-                return _type_conversion(data / (256 * 256 - 1), cfg)  # devide by maximum val of unit16 65535
+                return _type_conversion(
+                    data / (256 * 256 - 1), cfg
+                )  # devide by maximum val of unit16 65535
 
             else:
                 # any dtype that is not uint16 or uint8
@@ -199,13 +201,17 @@ def _expand(value, length: int) -> np.ndarray:
     """Turn a scalar or sequence into a length-`length` float32 array.
     Used in the asinh normalisation to ensure that the scale and clip
     parameters are always arrays of the correct length."""
-    arr = (
-        np.asarray(value, dtype=np.float32)
-        if isinstance(value, (list, tuple, np.ndarray))
-        else np.full(length, value, dtype=np.float32)
-    )
-    if arr.size != length:  # keep caller honest
-        raise ValueError(f"Expected {length} values, got {arr.size}: {value!r}")
+    if isinstance(value, (list, tuple)):
+        arr = np.array(value, dtype=np.float32)
+    else:
+        arr = np.array([value], dtype=np.float32)
+    if arr.size != length:
+        # input parameter mismatch
+        logger.warning(f"Parameter {value!r} has length {arr.size}, expected {length}.")
+        try:
+            arr = np.full(length, arr[0], dtype=np.float32)
+        except IndexError:
+            raise ValueError(f"Cannot shorten {arr!r} to length {length}")
     return arr
 
 
