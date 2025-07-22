@@ -13,6 +13,7 @@ def create_config(
     size=[224, 224],
     fits_extension=None,
     interpolation_order=1,
+    n_output_channels=3,
     normalisation_method=NormalisationMethod.CONVERSION_ONLY,
     channel_combination=None,
     num_workers=4,
@@ -29,15 +30,17 @@ def create_config(
     Args:
         size (list, optional): Target size for image resizing. Defaults to [224, 224].
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
+        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        fits_extension (list, optional): Extension(s) to use when loading FITS files. Defaults to None.
+        n_output_channels (int,optional): number of output channels. Defaults to 3.
+
         norm_maximum_value (type, optional): Maximum value for normalisation. Defaults to None implying dynamic.
         norm_minimum_value (type, optional): Minimum value for normalisation. Defaults to None implying dynamic.
         norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling. Defaults to False.
         norm_crop_for_maximum_value (type, optional): Crops the image for maximum value. Defaults to None.
         norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
         norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
-        fits_extension (type, optional): Extension(s) to use when loading FITS files. Defaults to None.
         log_level (str, optional): Logging level. Defaults to "INFO".
 
     Returns:
@@ -48,6 +51,7 @@ def create_config(
     cfg.log_level = log_level
     cfg.output_dtype = output_dtype
     cfg.size = size  # tuple of (height, width)
+    cfg.n_output_channels = n_output_channels  # int, normally 3 for R,G,B
     cfg.num_workers = num_workers
     # order of interpolation for resizing with skimage, 0-5
     cfg.interpolation_order = interpolation_order
@@ -72,11 +76,36 @@ def create_config(
     cfg.fits_extension = fits_extension  # Extension(s) to use when loading FITS files (can be int, string, or list of int/string)
     # Dictionary defining how to combine FITS extensions into RGB channels, should contain lists of the same length
     # as cfg.fits_extension, or empty lists - then the first three extensions will be used for RGB
-    cfg.channel_combination = {
-        "R": [],
-        "G": [],
-        "B": [],
-    }
+    if fits_extension is not None:
+
+        if channel_combination is None:
+            if not (len(fits_extension) in [1, n_output_channels]):
+                # fits extension does not match 1 channel (castable to greyscale) or n_output
+
+                raise ValueError(
+                    f"Length of fits_extensions does not match the specified number of output channels and"
+                    + f"no mapping via channelcombination is provided."
+                    + f"Length fits_extension: {np.array(fits_extension).size}"
+                    + f"Specified output channels: {n_output_channels}"
+                    + f"-> set channel_combination to be a {n_output_channels}x{np.array(fits_extension).size}"
+                )
+            else:
+                # selecting n fits extensions but no combination will lead to a 1-1 mapping
+                combination_array = np.zeros(n_output_channels, np.array(fits_extension).size)
+                if combination_array.shape[0] == combination_array.shape[1]:
+                    for i in range(0, combination_array.shape[0]):
+                        combination_array[i, i] = 1
+                else:
+                    # can only be fits,ext = 1
+                    for i in range(0, combination_array.shape[0]):
+                        combination_array[i, 0] = 1
+
+                cfg.channel_combination = combination_array
+        else:
+
+            cfg.channel_combination = (
+                channel_combination  # n_output x fits_extension sizes np array
+            )
     validate_config(cfg)
     return cfg
 
@@ -119,7 +148,7 @@ def _return_required_and_optional_keys():
         # Optional special parameters
         "normalisation.crop_for_maximum_value": ["special_crop", None, None, True, None],
         "fits_extension": ["special_fits_extension", None, None, True, None],
-        "fits_combination": ["special_fits_combination", None, None, True, None],
+        "channel_combination": ["special_channel_combination", None, None, True, None],
     }
 
     return config_spec
@@ -342,12 +371,13 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
             if value is not None:
                 if isinstance(value, list):
                     # if no combination parameters are set
-                    if not cfg.fits_combination["R"]:
-                        if len(value) not in [1, 3]:
-                            raise ValueError(
-                                f"{param_name} must be a str/int or list of strings/ints of length 1 or 3,"
-                                + f" if no fits_combination is set - got list of length {len(value)}"
-                            )
+                    if len(value) != cfg.channel_combination.shape[1]:
+                        raise ValueError(
+                            f"{param_name} must be a str/int or list of strings/ints of length 1, n_output = {cfg.n_output_channels},"
+                            + f"or match channel_combination.shape[1] = {cfg.channel_combination.shape[1]}"
+                            + f" got list of length {len(value)}"
+                        )
+
                     for v in value:
                         if not isinstance(v, (str, int)):
                             raise ValueError(
@@ -357,36 +387,26 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     raise ValueError(
                         f"{param_name} must be a str/int or list of strings/ints, got {type(value).__name__}"
                     )
-        elif dtype == "special_fits_combination":
+        elif dtype == "special_channel_combination":
 
-            if not isinstance(value, dict):
-                raise ValueError(
-                    f"{param_name} must be a dictionary with keys 'R', 'G', 'B', got {type(value).__name__}"
-                )
-            if set(value.keys()) != {"R", "G", "B"}:
-                raise ValueError(
-                    f"{param_name} must contain exactly keys 'R', 'G', 'B', got {set(value.keys())}"
-                )
-            for channel, channels_value in value.items():
-                if not isinstance(channels_value, list):
+            if not isinstance(value, np.ndarray):
+                raise ValueError(f"{param_name} must be a numpyarray")
+            if np.any(value < 0):
+                raise ValueError(f"{param_name} must not have negative values")
+            # TODO check 2dimensionality
+            for i in range(0, value.shape[0]):
+                if np.any(np.allclose(np.sum(value[i, :], 0))):
                     raise ValueError(
-                        f"{param_name} values for channel '{channel}' must be a list, got {type(channels_value).__name__}"
+                        f"{param_name} values for channel '{i}' must not sum to zero, got {value[i, :]}"
                     )
-                if channels_value:
-                    if np.allclose(np.sum(channels_value), 0):
-                        raise ValueError(
-                            f"{param_name} values for channel '{channel}' must not be all zeros, got {channels_value}"
-                        )
-                    if len(channels_value) != len(cfg.fits_extension):
-                        raise ValueError(
-                            f"{param_name} values for channel '{channel}' must have the same length as"
-                            + f" cfg.fits_extension: {len(cfg.fits_extension)},"
-                            + f" got length {len(channels_value)}"
-                        )
-                    if any(np.array(channels_value) < 0):
-                        raise ValueError(
-                            f"{param_name} values for channel '{channel}' must be non-negative, got {channels_value}"
-                        )
+            if not value.shape[0] == cfg.n_output_channels and not value.shape[1] == len(
+                cfg.fits_extension
+            ):
+                raise ValueError(
+                    f"{param_name} channel mapping shape must reflect input and output shapes:"
+                    + f" expected n output {cfg.n_output_channels} & n input {len(cfg.fits_extension)}"
+                    + f" got {value.shape[0]}x {value.shape[1]}"
+                )
 
         else:
             raise ValueError(f"Unknown data type for {param_name}: {dtype}")

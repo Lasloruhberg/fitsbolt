@@ -105,16 +105,12 @@ def _read_image(filepath, cfg):
                         logger.error(error_msg)
                         raise ValueError(error_msg)
 
-                    # Combine the extensions into RGB channels
+                    # Combine the extensions into n_output channels
                     # Do a linear combination based on the configuration
-                    if all(cfg.fits_combination[c] for c in "RGB"):
-                        weights = np.array(
-                            [
-                                cfg.fits_combination["R"],
-                                cfg.fits_combination["G"],
-                                cfg.fits_combination["B"],
-                            ]
-                        )  # Shape: (3, N)
+                    if cfg.channel_combination is not None:
+                        weights = (
+                            cfg.channel_combination
+                        )  # Shape: (n_output_channels, n_fits_extensions)
 
                         # Normalize weights
                         weights /= np.sum(weights, axis=1, keepdims=True)
