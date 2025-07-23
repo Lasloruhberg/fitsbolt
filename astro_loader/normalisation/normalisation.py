@@ -2,7 +2,8 @@ import numpy as np
 from loguru import logger
 
 
-from skimage.util import img_as_ubyte
+from skimage.util import img_as_ubyte, img_as_uint, img_as_float32
+
 from astropy.visualization import (
     ImageNormalize,
     LogStretch,
@@ -18,6 +19,14 @@ from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
 def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
     """Convert the image data to the specified output dtype."""
     if cfg.output_dtype == np.uint8:
+        return img_as_ubyte(data)
+    elif cfg.output_dtype == np.uint16:
+        return img_as_uint(data)
+    elif cfg.output_dtype == np.float32:
+        return img_as_float32(data)
+    else:
+        # Default to uint8 if output_dtype is not specified or not supported
+        logger.warning(f"Unsupported output dtype: {cfg.output_dtype}, defaulting to uint8")
         return img_as_ubyte(data)
 
 
@@ -107,9 +116,10 @@ def _log_normalisation(data, cfg):
             otherwise set to 0 or cfg.normalisation.minimum_value if set
             cfg.normalisation.crop_for_maximum_value (Tuple[int, int], optional): Width and height to crop around the center,
             to calculate the maximum value in
+            cfg.output_dtype: The desired output data type
 
     Returns:
-        numpy array: A normalised image in the [0,255] range as uint8
+        numpy array: A normalised image in the specified output data type
     """
 
     if cfg.normalisation.log_calculate_minimum_value:
@@ -136,16 +146,17 @@ def _zscale_normalisation(data, cfg):
     """A linear zscale normalisation
 
     Args:
-        image (numpy array): Input image array, ideally a float32 or float64 array
+        data (numpy array): Input image array, ideally a float32 or float64 array
+        cfg (DotMap): Configuration with normalisation values and output dtype
 
     Returns:
-        numpy array: A normalised image in the [0,255] range as uint8
+        numpy array: A normalised image in the specified output data type
     """
     # Min Max value do not apply, also no constrain to center
     norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=LinearStretch(), clip=True)
     img_normalised = norm(data)  # range 0,1
     if np.max(img_normalised) > np.min(img_normalised):
-        # Convert back to uint8 range
+        # Convert back to specified dtype
         return _type_conversion(img_normalised, cfg)
     else:
         logger.warning(
@@ -155,46 +166,67 @@ def _zscale_normalisation(data, cfg):
 
 
 def _conversiononly_normalisation(data, cfg):
-    """A normalisation that does not change the image, but only converts it to uint8
+    """A normalisation that does not change the image, but only converts it to the specified dtype
 
     Args:
         data (numpy array): Input image array, can have a high dynamic range
         cfg (DotMap): Configuration with optional normalisation values.
             cfg.normalisation.crop_for_maximum_value (Tuple[int, int], optional): Width and height to crop around the center,
             to compute the maximum value in
+            cfg.output_dtype: The desired output data type (np.uint8, np.uint16, np.float32)
 
     Returns:
-        numpy array: A normalised image in the [0,255] range as uint8
+        numpy array: A converted image in the specified output dtype
     """
-    # Check dtype if any conversion is needed
+    # If input dtype already matches the requested output dtype, return as is
+    if data.dtype == cfg.output_dtype:
+        return data
+
+    # Handle specific direct conversions for better precision
     if cfg.output_dtype == np.uint8:
-        if data.dtype != np.uint8:
-            # check for uint16 as a simply divison converts
-            if data.dtype == np.uint16:
-                # convert to uint8
-                return _type_conversion(
-                    data / (256 * 256 - 1), cfg
-                )  # devide by maximum val of unit16 65535
+        if data.dtype == np.uint16:
+            # Direct conversion from uint16 to uint8 with proper scaling
+            return _type_conversion(data / 65535.0, cfg)  # 65535 = 2^16 - 1
 
-            else:
-                # any dtype that is not uint16 or uint8
-                # get min or max from config if available
-                maximum = _compute_max_value(data, cfg)
-                minimum = _compute_min_value(data, cfg)
+        elif data.dtype == np.float32 or data.dtype == np.float64:
+            # For floating point data that's already in [0,1] range
+            if 0.0 <= np.min(data) <= np.max(data) <= 1.0:
+                return _type_conversion(data, cfg)
 
-                # ensure valid range
-                if maximum > minimum:
-                    norm = ImageNormalize(data, vmin=minimum, vmax=maximum, clip=True)
-                    img_normalised = norm(data)  # range 0,1
-                    return _type_conversion(img_normalised, cfg)  # Convert back to uint8 range
-                else:
-                    logger.warning(
-                        "Conversion normalisation: Image minimum value is larger than maximum, setting image to 0"
-                    )
-                    return np.zeros_like(data, dtype=np.uint8)
-        else:
-            # already uint8
-            return data
+    elif cfg.output_dtype == np.uint16:
+        if data.dtype == np.uint8:
+            # Direct conversion from uint8 to uint16 with proper scaling
+            return _type_conversion(data / 255.0, cfg)  # Scale to [0,1] then convert
+
+        elif data.dtype == np.float32 or data.dtype == np.float64:
+            # For floating point data that's already in [0,1] range
+            if 0.0 <= np.min(data) <= np.max(data) <= 1.0:
+                return _type_conversion(data, cfg)
+
+    elif cfg.output_dtype == np.float32:
+        if data.dtype == np.uint8:
+            # Convert uint8 directly to float32 [0,1] range
+            return _type_conversion(data / 255.0, cfg)
+
+        elif data.dtype == np.uint16:
+            # Convert uint16 directly to float32 [0,1] range
+            return _type_conversion(data / 65535.0, cfg)
+
+    # For any other case, use normalized conversion
+    # get min or max from config if available
+    maximum = _compute_max_value(data, cfg)
+    minimum = _compute_min_value(data, cfg)
+
+    # ensure valid range
+    if maximum > minimum:
+        norm = ImageNormalize(data, vmin=minimum, vmax=maximum, clip=True)
+        img_normalised = norm(data)  # range 0,1
+        return _type_conversion(img_normalised, cfg)
+    else:
+        logger.warning(
+            "Conversion normalisation: Image minimum value is larger than maximum, setting image to 0"
+        )
+        return np.zeros_like(data, dtype=cfg.output_dtype)
 
 
 def _expand(value, length: int) -> np.ndarray:
@@ -230,11 +262,12 @@ def _asinh_normalisation(data, cfg):
         ``cfg.normalisation.asinh_scale`` and
         ``cfg.normalisation.asinh_clip``.  Each may be a scalar
         or a three-element sequence.
+        ``cfg.output_dtype``: The desired output data type.
 
     Returns
     -------
     np.ndarray
-        Asinh-stretched (and possibly clipped) image as ``uint8``.
+        Asinh-stretched (and possibly clipped) image in the specified output data type.
     """
     # Determine whether we are dealing with RGB+.... or not
     channels = data.shape[-1] if data.ndim == 3 else 1

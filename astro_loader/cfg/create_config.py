@@ -304,7 +304,7 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                 raise ValueError(f"{param_name} must be a boolean, got {type(value).__name__}")
 
         elif dtype == type:
-            if not isinstance(value, type) or not isinstance(value, np.dtype):
+            if not (isinstance(value, type) or isinstance(value, np.dtype)):
                 raise ValueError(
                     f"{param_name} must be a (numpy) dtype, got {type(value).__name__}{_format_constraints()}"
                 )
