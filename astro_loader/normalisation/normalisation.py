@@ -152,6 +152,10 @@ def _zscale_normalisation(data, cfg):
     Returns:
         numpy array: A normalised image in the specified output data type
     """
+    if not np.any(data != data.flat[0]):  # Constant value check
+        logger.warning("Zscale normalisation: constant image detected, using fallback conversion.")
+        return _conversiononly_normalisation(data, cfg)
+
     # Min Max value do not apply, also no constrain to center
     norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=LinearStretch(), clip=True)
     img_normalised = norm(data)  # range 0,1
