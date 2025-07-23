@@ -243,7 +243,8 @@ def _expand(value, length: int) -> np.ndarray:
         arr = np.array([value], dtype=np.float32)
     if arr.size != length:
         # input parameter mismatch
-        logger.warning(f"Parameter {value!r} has length {arr.size}, expected {length}.")
+        if arr.size != 1:
+            logger.warning(f"Parameter {value!r} has length {arr.size}, expected {length}.")
         try:
             arr = np.full(length, arr[0], dtype=np.float32)
         except IndexError:
