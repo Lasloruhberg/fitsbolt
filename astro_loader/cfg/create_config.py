@@ -141,6 +141,7 @@ def _return_required_and_optional_keys():
     config_spec = {
         # Required positive integers
         "num_workers": [int, 1, None, False, None],
+        "n_output_channels": [int, 1, None, False, None],
         # Required boolean parameters
         "normalisation.log_calculate_minimum_value": [bool, None, None, False, None],
         # Required parameters with allowed values
@@ -158,6 +159,7 @@ def _return_required_and_optional_keys():
         "normalisation.asinh_scale": ["special_asinh_scale", None, None, False, None],
         "normalisation.asinh_clip": ["special_asinh_clip", None, None, False, None],
         "interpolation_order": [int, 0, 5, False, None],  # 0-5 for skimage interpolation"
+        "output_dtype": [type, None, None, False, None],
         # Optional numeric parameters
         "normalisation.maximum_value": [float, None, None, True, None],
         "normalisation.minimum_value": [float, None, None, True, None],
@@ -301,6 +303,12 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
             if not isinstance(value, bool):
                 raise ValueError(f"{param_name} must be a boolean, got {type(value).__name__}")
 
+        elif dtype == type:
+            if not isinstance(value, type) or not isinstance(value, np.dtype):
+                raise ValueError(
+                    f"{param_name} must be a (numpy) dtype, got {type(value).__name__}{_format_constraints()}"
+                )
+            # No min/max/allowed values for dtypes
         # Handle special validation cases
         elif dtype == "special_size":
             if not isinstance(value, (list, tuple)) or len(value) != 2:
