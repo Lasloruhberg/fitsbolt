@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 from PIL import Image
 from skimage.transform import resize
@@ -355,6 +356,18 @@ def load_and_process_images(
         )
     else:
         validate_config(cfg)
+    # initialise logger
+    logger.remove()
+
+    # Add a new logger configuration for console output
+    logger.add(
+        sys.stderr,
+        colorize=True,
+        level=cfg.log_level.upper(),
+        format="<green>{time:HH:mm:ss}</green>|astro-loader-<blue>{level}</blue>| <level>{message}</level>",
+    )
+
+    logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
 
     logger.debug(
         f"Loading {len(filepaths)} images in parallel with normalisation: {cfg.normalisation_method}"

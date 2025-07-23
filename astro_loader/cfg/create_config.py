@@ -2,9 +2,6 @@ import numpy as np
 from dotmap import DotMap
 from loguru import logger
 
-import os
-import numpy as np
-
 from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
 
 
@@ -28,16 +25,22 @@ def create_config(
     """Create a configuration object for loading and processing astronomical data.
 
     Args:
-        size (list, optional): Target size for image resizing. Defaults to [224, 224].
-        num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        size (list, optional): Target size for image resizing. Defaults to [224, 224].
         fits_extension (list, optional): Extension(s) to use when loading FITS files. Defaults to None.
+        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
         n_output_channels (int,optional): number of output channels. Defaults to 3.
+        normalisation_method (NormalisationMethod, optional): Method for normalising images.
+                            Defaults to NormalisationMethod.CONVERSION_ONLY.
+        channel_combination (np.ndarray, optional): n_output x fits_extension sized np array for channel mapping& lerp.
+                            Defaults to None, which will map extensions to channels either
+                            1:1 if applicable or 1:n_output if only 1 input is provided.
+        num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
 
         norm_maximum_value (type, optional): Maximum value for normalisation. Defaults to None implying dynamic.
         norm_minimum_value (type, optional): Minimum value for normalisation. Defaults to None implying dynamic.
-        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling. Defaults to False.
+        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
+                            Defaults to False.
         norm_crop_for_maximum_value (type, optional): Crops the image for maximum value. Defaults to None.
         norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
         norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
@@ -73,32 +76,45 @@ def create_config(
     cfg.normalisation.asinh_clip = norm_asinh_clip
 
     # FITS file handling settings
-    cfg.fits_extension = fits_extension  # Extension(s) to use when loading FITS files (can be int, string, or list of int/string)
+    # Extension(s) to use when loading FITS files (can be int, string, or list of int/string)
+    cfg.fits_extension = fits_extension
     # Dictionary defining how to combine FITS extensions into RGB channels, should contain lists of the same length
     # as cfg.fits_extension, or empty lists - then the first three extensions will be used for RGB
     if fits_extension is not None:
+        # Convert single extension to list format
+        if not isinstance(fits_extension, (list, tuple, np.ndarray)):
+            fits_extension = [fits_extension]  # Convert to list for consistent handling
+            cfg.fits_extension = fits_extension
 
         if channel_combination is None:
             if not (len(fits_extension) in [1, n_output_channels]):
                 # fits extension does not match 1 channel (castable to greyscale) or n_output
 
                 raise ValueError(
-                    f"Length of fits_extensions does not match the specified number of output channels and"
-                    + f"no mapping via channelcombination is provided."
+                    "Length of fits_extensions does not match the specified number of output channels and"
+                    + "no mapping via channelcombination is provided."
                     + f"Length fits_extension: {np.array(fits_extension).size}"
                     + f"Specified output channels: {n_output_channels}"
                     + f"-> set channel_combination to be a {n_output_channels}x{np.array(fits_extension).size}"
                 )
             else:
                 # selecting n fits extensions but no combination will lead to a 1-1 mapping
-                combination_array = np.zeros(n_output_channels, np.array(fits_extension).size)
+                extension_size = len(fits_extension)
+                combination_array = np.zeros((n_output_channels, extension_size))
                 if combination_array.shape[0] == combination_array.shape[1]:
+                    # Identity matrix mapping
                     for i in range(0, combination_array.shape[0]):
                         combination_array[i, i] = 1
                 else:
-                    # can only be fits,ext = 1
-                    for i in range(0, combination_array.shape[0]):
-                        combination_array[i, 0] = 1
+                    # For the case where fits_extension has only 1 element
+                    if extension_size == 1:
+                        # Map all output channels to the single input channel
+                        for i in range(0, combination_array.shape[0]):
+                            combination_array[i, 0] = 1
+
+                # Debug output
+                print(f"Created channel_combination array with shape {combination_array.shape}")
+                print(f"Array contents: {combination_array}")
 
                 cfg.channel_combination = combination_array
         else:
@@ -207,9 +223,6 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
 
     # Keep track of checked keys
     expected_keys = set()
-
-    # For relative directory paths, select base
-    current_file = os.path.abspath(__file__)
 
     # Validate each parameter
     for param_name, (dtype, min_val, max_val, optional, allowed_values) in config_spec.items():
@@ -373,9 +386,9 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     # if no combination parameters are set
                     if len(value) != cfg.channel_combination.shape[1]:
                         raise ValueError(
-                            f"{param_name} must be a str/int or list of strings/ints of length 1, n_output = {cfg.n_output_channels},"
-                            + f"or match channel_combination.shape[1] = {cfg.channel_combination.shape[1]}"
-                            + f" got list of length {len(value)}"
+                            f"{param_name} must be a str/int or list of strings/ints of length 1, n_output ="
+                            + f"{cfg.n_output_channels}, or match channel_combination.shape[1] = "
+                            + f"{cfg.channel_combination.shape[1]}, got list of length {len(value)}"
                         )
 
                     for v in value:
@@ -395,7 +408,7 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                 raise ValueError(f"{param_name} must not have negative values")
             # TODO check 2dimensionality
             for i in range(0, value.shape[0]):
-                if np.any(np.allclose(np.sum(value[i, :], 0))):
+                if np.any(np.allclose(np.sum(value[i, :]), 0)):
                     raise ValueError(
                         f"{param_name} values for channel '{i}' must not sum to zero, got {value[i, :]}"
                     )
