@@ -1,4 +1,4 @@
-name: al
+name: fb
 channels:
   - conda-forge
   - defaults

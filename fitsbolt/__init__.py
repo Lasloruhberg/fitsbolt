@@ -5,7 +5,7 @@ from .resize import resize_images
 
 # Import from submodules
 from .normalisation.NormalisationMethod import NormalisationMethod
-from .normalisation.normalisation import normalise_image, normalise_images
+from .normalisation.normalisation import normalise_images
 from .cfg.create_config import create_config, validate_config, SUPPORTED_IMAGE_EXTENSIONS
 
 __version__ = "0.1.0"

@@ -10,6 +10,10 @@ pip install fitsbolt
 
 # Install from source
 pip install git+https://github.com/Lasloruhberg/fitsbolt.git
+
+# make conda env
+conda env create -f environment.yml
+conda activate fb
 ```
 
 ## Quick Start
@@ -34,7 +38,7 @@ raw_images = fitsbolt.read_images(
 )
 
 # Step 2: Normalise images  
-normalized_images = fitsbolt.normalise_images(
+normalised_images = fitsbolt.normalise_images(
     images=raw_images,
     normalisation_method=fitsbolt.NormalisationMethod.ASINH,
     norm_asinh_scale=[0.7, 0.7, 0.7],
@@ -44,7 +48,7 @@ normalized_images = fitsbolt.normalise_images(
 
 # Step 3: Resize images
 final_images = fitsbolt.resize_images(
-    images=normalized_images,
+    images=normalised_images,
     size=[224, 224],
     interpolation_order=1,
     output_dtype=np.uint8,
