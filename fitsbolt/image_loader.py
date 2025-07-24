@@ -263,7 +263,12 @@ def process_image(
                 order=cfg.interpolation_order if cfg.interpolation_order is not None else 1,
                 preserve_range=True,
             )
-            image = np.clip(image, 0, 255).astype(np.uint8)
+            if cfg.output_dtype == np.uint8:
+                image = np.clip(image, 0, 255).astype(np.uint8)
+            elif cfg.output_dtype == np.uint16:
+                image = np.clip(image, 0, 65535).astype(np.uint16)
+            elif image.dtype != cfg.output_dtype:
+                image = image.astype(cfg.output_dtype)
 
         return image
 

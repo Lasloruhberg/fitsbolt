@@ -26,7 +26,7 @@ def create_config(
 
     Args:
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
-        size (list, optional): Target size for image resizing. Defaults to [224, 224].
+        size (list, optional): Target size for image resizing. Defaults to [224, 224]. If None, no resizing.
         fits_extension (list, optional): Extension(s) to use when loading FITS files. Defaults to None.
         interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
         n_output_channels (int,optional): number of output channels. Defaults to 3.
@@ -311,11 +311,12 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
             # No min/max/allowed values for dtypes
         # Handle special validation cases
         elif dtype == "special_size":
-            if not isinstance(value, (list, tuple)) or len(value) != 2:
-                raise ValueError(
-                    f"{param_name} must be a list or tuple of length 2, got {type(value).__name__}"
-                    + f"with length {len(value) if hasattr(value, '__len__') else 'unknown'}"
-                )
+            if value is not None:
+                if not isinstance(value, (list, tuple)) or len(value) != 2:
+                    raise ValueError(
+                        f"{param_name} must be a list or tuple of length 2, got {type(value).__name__}"
+                        + f"with length {len(value) if hasattr(value, '__len__') else 'unknown'}"
+                    )
 
         elif dtype == "special_normalisation_method":
             if not isinstance(value, NormalisationMethod):
