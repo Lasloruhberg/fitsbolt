@@ -13,7 +13,7 @@ from astropy.io import fits
 from fitsbolt.image_loader import (
     _read_image,
     _load_image,
-    process_image,
+    _process_image,
     load_and_process_images,
     SUPPORTED_IMAGE_EXTENSIONS,
 )
@@ -202,7 +202,7 @@ class TestImageIO:
         gray_data = np.zeros((50, 50), dtype=np.uint8)
         gray_data[10:40, 10:40] = 200
 
-        processed = process_image(
+        processed = _process_image(
             gray_data,
             test_config,
         )
@@ -218,7 +218,7 @@ class TestImageIO:
         rgba_data[10:40, 10:40, :3] = [255, 128, 64]  # RGB values
         rgba_data[10:40, 10:40, 3] = 255  # Alpha
 
-        processed = process_image(
+        processed = _process_image(
             rgba_data,
             test_config,
         )
@@ -234,7 +234,7 @@ class TestImageIO:
         gray_data = np.zeros((50, 50), dtype=np.uint8)
         gray_data[10:40, 10:40] = 200
 
-        processed = process_image(gray_data, test_config, convert_to_rgb=False)
+        processed = _process_image(gray_data, test_config, convert_to_rgb=False)
         assert len(processed.shape) == 2 or (len(processed.shape) == 3 and processed.shape[2] == 3)
         assert processed.dtype == np.uint8
 
@@ -245,7 +245,7 @@ class TestImageIO:
         rgb_data = np.zeros((100, 100, 3), dtype=np.uint8)
         rgb_data[25:75, 25:75, 0] = 255  # Red square
 
-        processed = process_image(rgb_data, test_config)
+        processed = _process_image(rgb_data, test_config)
         assert processed.shape[:2] == (64, 64)
         assert processed.shape[2] == 3
         assert processed.dtype == np.uint8
@@ -327,7 +327,7 @@ class TestImageIO:
         test_rgba[height // 2 :, width // 2 :, 3] = 0  # Zero alpha
 
         # Test RGB conversion
-        rgb_img = process_image(
+        rgb_img = _process_image(
             test_rgba,
             test_config,
         )
@@ -383,7 +383,7 @@ class TestImageIO:
         assert gray_fits.ndim == 2, "Test requires a 2D (grayscale) FITS image"
 
         # Now process with RGB conversion
-        rgb_fits = process_image(
+        rgb_fits = _process_image(
             gray_fits,
             test_config,
         )
@@ -450,7 +450,7 @@ class TestImageIO:
         assert img.shape == (50, 50, 3), "Should read all 3 channels"
 
         # Now process with RGB conversion
-        processed = process_image(
+        processed = _process_image(
             img,
             test_config,
         )
@@ -494,7 +494,7 @@ class TestImageIO:
         ), f"Should read data with shape matching n_output_channels={test_config.n_output_channels}, got {img_four.shape}"
 
         # Now process with RGB conversion
-        processed_four = process_image(
+        processed_four = _process_image(
             img_four,
             test_config,
         )
@@ -573,7 +573,7 @@ class TestImageIO:
             assert img.shape == (50, 50, 3), "Should have n_output_channels=3 dimensions"
 
             # Process with RGB conversion - should work by filling in a zero channel
-            processed = process_image(
+            processed = _process_image(
                 img,
                 test_config,
             )
@@ -771,7 +771,7 @@ class TestImageIO:
             img = _read_image(temp_fits_path, test_cfg)
             assert img.shape == (50, 50, 3), "Should read all 3 channels"
 
-            processed = process_image(
+            processed = _process_image(
                 img,
                 test_cfg,
             )
@@ -846,7 +846,7 @@ class TestImageIO:
             ), "Channel 2 should be weighted average 3.5"
 
             # Process the image
-            processed = process_image(
+            processed = _process_image(
                 img,
                 test_config,
             )

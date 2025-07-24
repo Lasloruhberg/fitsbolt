@@ -8,7 +8,7 @@ from loguru import logger
 
 from fitsbolt.cfg.create_config import create_config
 from fitsbolt.normalisation.normalisation import (
-    normalise_image,
+    _normalise_image,
     _type_conversion,
     _crop_center,
     _compute_max_value,
@@ -370,7 +370,7 @@ class TestNormaliseImageIntegration:
             cfg = get_test_config(method)
             image = create_gradient_rgb(dtype=np.float32)
 
-            result = normalise_image(image, cfg)
+            result = _normalise_image(image, cfg)
 
             assert result.dtype == np.uint8, f"Failed for method {method}"
             assert result.shape == image.shape, f"Failed for method {method}"
@@ -383,7 +383,7 @@ class TestNormaliseImageIntegration:
             cfg = get_test_config(method)
             image = create_gradient_single_channel(dtype=np.float32)
 
-            result = normalise_image(image, cfg)
+            result = _normalise_image(image, cfg)
 
             assert result.dtype == np.uint8, f"Failed for method {method}"
             assert result.shape == image.shape, f"Failed for method {method}"
@@ -393,7 +393,7 @@ class TestNormaliseImageIntegration:
         cfg = get_asinh_test_config([1.0, 1.5, 2.0, 2.5])  # 4 channels
         image = create_multi_channel_image(dtype=np.float32)
 
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
 
         assert result.dtype == np.uint8
         assert result.shape == image.shape
@@ -404,7 +404,7 @@ class TestNormaliseImageIntegration:
         cfg.normalisation_method = "invalid_method"  # Not a NormalisationMethod enum
 
         image = create_gradient_rgb(dtype=np.float32)
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
 
         # Should fall back to conversion only
         assert result.dtype == np.uint8
@@ -418,7 +418,7 @@ class TestNormaliseImageIntegration:
         cfg.normalisation.maximum_value = 1000.0
 
         image = np.array([[500.0, 750.0, 1200.0]], dtype=np.float32)
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
 
         assert result.dtype == np.uint8
         # Values should be clipped and scaled
@@ -434,7 +434,7 @@ class TestNormaliseImageIntegration:
         image[4:6, 4:6] = 100.0  # Center values
         image[0, 0] = 1000.0  # High value outside center
 
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
         # Should use center region for normalization, not global max
 
@@ -456,7 +456,7 @@ class TestNormalisationRobustness:
             else:  # float types
                 image = np.array([[0.0, 0.5, 1.0]], dtype=dtype)
 
-            result = normalise_image(image, cfg)
+            result = _normalise_image(image, cfg)
             assert result.dtype == np.uint8, f"Failed for dtype {dtype}"
 
     def test_extreme_values(self):
@@ -465,13 +465,13 @@ class TestNormalisationRobustness:
 
         # Test with very large values
         image = np.array([[1e10, 2e10, 3e10]], dtype=np.float64)
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
         assert np.all(result >= 0) and np.all(result <= 255)
 
         # Test with very small values
         image = np.array([[1e-10, 2e-10, 3e-10]], dtype=np.float64)
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
 
     def test_nan_and_inf_handling(self):
@@ -480,13 +480,13 @@ class TestNormalisationRobustness:
 
         # Test with NaN values
         image = np.array([[1.0, np.nan, 3.0]], dtype=np.float32)
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
         # Function should handle NaN gracefully
 
         # Test with infinity values
         image = np.array([[1.0, np.inf, 3.0]], dtype=np.float32)
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
 
     def test_empty_and_single_pixel(self):
@@ -495,12 +495,12 @@ class TestNormalisationRobustness:
 
         # Test with single pixel
         image = np.array([[100.0]], dtype=np.float32)
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
         assert result.shape == (1, 1)
 
         # Test with very small image
         image = np.array([[1.0, 2.0]], dtype=np.float32)
-        result = normalise_image(image, cfg)
+        result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
         assert result.shape == (1, 2)
