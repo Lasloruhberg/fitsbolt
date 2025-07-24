@@ -91,6 +91,7 @@ def load_and_process_images(
     interpolation_order=1,
     normalisation_method=NormalisationMethod.CONVERSION_ONLY,
     channel_combination=None,
+    n_output_channels=3,
     num_workers=4,
     norm_maximum_value=None,
     norm_minimum_value=None,
@@ -119,6 +120,7 @@ def load_and_process_images(
                                                 Defaults to NormalisationMethod.CONVERSION_ONLY.
         channel_combination (dict, optional): Dictionary defining how to combine FITS extensions into output channels.
                                                 Defaults to None.
+        n_output_channels (int, optional): Number of output channels for the image. Defaults to 3.
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
         norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None.
         norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None.
@@ -148,6 +150,7 @@ def load_and_process_images(
             interpolation_order=interpolation_order,
             normalisation_method=normalisation_method,
             channel_combination=channel_combination,
+            n_output_channels=n_output_channels,
             num_workers=num_workers,
             norm_maximum_value=norm_maximum_value,
             norm_minimum_value=norm_minimum_value,

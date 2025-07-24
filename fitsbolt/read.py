@@ -16,6 +16,7 @@ def read_images(
     size=[224, 224],
     fits_extension=None,
     interpolation_order=1,
+    n_output_channels=3,
     channel_combination=None,
     num_workers=4,
     desc="Reading images",
@@ -34,8 +35,9 @@ def read_images(
         interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
         normalisation_method (NormalisationMethod, optional): Normalisation method to use.
                                                 Defaults to NormalisationMethod.CONVERSION_ONLY.
+        n_output_channels (int, optional): Number of output channels for the image. Defaults to 3.
         channel_combination (dict, optional): Dictionary defining how to combine FITS extensions into output channels.
-                                                Defaults to None.
+                                                Defaults to None, which will try 1:1 or 1:n:output mapping for FITS
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
@@ -54,6 +56,7 @@ def read_images(
         size=size,
         fits_extension=fits_extension,
         interpolation_order=interpolation_order,
+        n_output_channels=n_output_channels,
         channel_combination=channel_combination,
         num_workers=num_workers,
     )
