@@ -1,4 +1,4 @@
-# astro_loader
+# fitsbolt
 
 A versatile Python package for loading and normalizing astronomical images across multiple formats (FITS, JPEG, PNG, TIFF). The package provides a uniform interface for image processing, particularly optimized for astronomical data with high dynamic range.
 
@@ -6,10 +6,10 @@ A versatile Python package for loading and normalizing astronomical images acros
 
 ```bash
 # Install from PyPI
-pip install astro_loader
+pip install fitsbolt
 
 # Install from source
-pip install git+https://github.com/Lasloruhberg/astro_loader.git
+pip install git+https://github.com/Lasloruhberg/fitsbolt.git
 ```
 
 ## Quick Start
@@ -17,8 +17,8 @@ pip install git+https://github.com/Lasloruhberg/astro_loader.git
 ### Loading Multiple Images
 
 ```python
-from astro_loader.image_loader import load_and_process_images
-from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.image_loader import load_and_process_images
+from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 import numpy as np
 
 # List of image paths
@@ -41,13 +41,13 @@ for path, img in results:
 
 ### Custom Image Processing
 
-For cases where you have your own image loading pipeline but want to use astro_loader's processing capabilities:
+For cases where you have your own image loading pipeline but want to use fitsbolt's processing capabilities:
 
 ```python
 import numpy as np
-from astro_loader.image_loader import process_image
-from astro_loader.cfg.create_config import create_config
-from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.image_loader import process_image
+from fitsbolt.cfg.create_config import create_config
+from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 
 # Load image data using your own method
 raw_image = your_image_loading_function()
@@ -83,7 +83,7 @@ For FITS files, the package offers flexible extension handling:
 
 ### FITS Extension Handling
 
-astro_loader provides advanced capabilities for working with multi-extension FITS files:
+fitsbolt provides advanced capabilities for working with multi-extension FITS files:
 
 #### `fits_extension` Parameter
 
@@ -134,7 +134,7 @@ results = load_and_process_images(
 
 ### Normalization Methods
 
-astro_loader provides several normalization methods for handling astronomical images with high dynamic range:
+fitsbolt provides several normalization methods for handling astronomical images with high dynamic range:
 
 1. **CONVERSION_ONLY**:
    - If input dtype already matches the requested output dtype: No conversion applied

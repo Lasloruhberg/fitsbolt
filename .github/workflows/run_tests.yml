@@ -59,7 +59,7 @@ jobs:
           micromamba activate al
           micromamba install pytest pytest-cov
           pip install -e .
-          pytest --junitxml=pytest.xml --cov-report=xml:coverage.xml --cov-report=term --cov=astro_loader tests/ | tee pytest-coverage.txt
+          pytest --junitxml=pytest.xml --cov-report=xml:coverage.xml --cov-report=term --cov=fitsbolt tests/ | tee pytest-coverage.txt
           echo "===== Coverage report ====="
           cat pytest-coverage.txt      
       - name: Pytest coverage comment

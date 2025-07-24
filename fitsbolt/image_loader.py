@@ -9,9 +9,9 @@ from loguru import logger
 
 from astropy.io import fits
 
-from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
-from astro_loader.normalisation.normalisation import normalise_image
-from astro_loader.cfg.create_config import create_config, validate_config
+from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.normalisation.normalisation import normalise_image
+from fitsbolt.cfg.create_config import create_config, validate_config
 
 
 SUPPORTED_IMAGE_EXTENSIONS = {".fits", ".jpg", ".jpeg", ".png", ".tiff"}

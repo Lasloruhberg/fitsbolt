@@ -10,15 +10,15 @@ import tempfile
 from PIL import Image
 from astropy.io import fits
 
-from astro_loader.image_loader import (
+from fitsbolt.image_loader import (
     _read_image,
     _load_image,
     process_image,
     load_and_process_images,
     SUPPORTED_IMAGE_EXTENSIONS,
 )
-from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
-from astro_loader.cfg.create_config import create_config
+from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.cfg.create_config import create_config
 
 
 class TestImageIO:

@@ -13,7 +13,7 @@ from astropy.visualization import (
     PercentileInterval,
 )
 
-from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 
 
 def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:

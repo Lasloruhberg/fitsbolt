@@ -2,7 +2,7 @@ import numpy as np
 from dotmap import DotMap
 from loguru import logger
 
-from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 
 
 def create_config(

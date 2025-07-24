@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "astro_loader"
+name = "fitsbolt"
 version = "0.1.0"
 description = "Python module to load astronomical images"
 readme = "README.md"
@@ -31,16 +31,16 @@ dependencies = [
 dev = ["pytest", "pytest-cov", "black", "flake8"]
 
 [project.scripts]
-astro_loader = "astro_loader.image_loader:main"
+fitsbolt = "fitsbolt.image_loader:main"
 
 [project.urls]
-Homepage = "https://github.com/Lasloruhberg/astro_loader"
-Repository = "https://github.com/Lasloruhberg/astro_loader"
-Issues = "https://github.com/Lasloruhberg/astro_loader/issues"
+Homepage = "https://github.com/Lasloruhberg/fitsbolt"
+Repository = "https://github.com/Lasloruhberg/fitsbolt"
+Issues = "https://github.com/Lasloruhberg/fitsbolt/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["astro_loader*"]
+include = ["fitsbolt*"]
 
 [tool.black]
 line-length = 100

@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from loguru import logger
 
-from astro_loader.cfg.create_config import create_config
-from astro_loader.normalisation.normalisation import (
+from fitsbolt.cfg.create_config import create_config
+from fitsbolt.normalisation.normalisation import (
     normalise_image,
     _type_conversion,
     _crop_center,
@@ -19,7 +19,7 @@ from astro_loader.normalisation.normalisation import (
     _asinh_normalisation,
     _expand,
 )
-from astro_loader.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 
 
 @pytest.fixture
@@ -230,7 +230,7 @@ class TestNormalisationUtilities:
         # Check logs for warnings
         caplog.clear()
         _expand([1.0, 2.0], 3)
-        assert "| WARNING  | astro_loader.normalisation.normalisation:_expand:" in caplog.text
+        assert "| WARNING  | fitsbolt.normalisation.normalisation:_expand:" in caplog.text
         caplog.clear()
 
 
