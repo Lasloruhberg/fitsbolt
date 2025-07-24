@@ -313,4 +313,39 @@ def _read_image(filepath, cfg):
             image.ndim >= 2 and image.ndim <= 3
         ), f"Image {filepath} has less than 2 or more than 3 dimensions: {image.shape}"
 
+    # check if there is a greyscale image or an RGBA image that needs to be converted to RGB
+    image = _convert_greyscale_to_nchannels(
+        image,
+        n_output_channels=cfg.n_output_channels,
+    )
+
+    assert (
+        len(image.shape) == 3 and image.shape[2] == cfg.n_output_channels
+    ), f"After reading, image has unexpected shape: {image.shape} - {filepath}"
+
+    return image
+
+
+def _convert_greyscale_to_nchannels(image, n_output_channels):
+    """
+    Convert a grayscale image to a specified number of channels.
+    This function provides some backwards compatibility
+    Args:
+        image (numpy.ndarray): Grayscale image array (H,W,C or H,W)
+        n_output_channels (int): Number of output channels
+    Returns:
+        numpy.ndarray: Image with the specified number of channels (H,W,n_output_channels)
+    """
+
+    # Handle grayscale images
+    if len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
+        image = np.stack((image,) * n_output_channels, axis=-1)
+
+    # if e.g. rgb (n_output_channels == 3) is requested but an rgba png is loaded
+    # Handle e.g. RGBA images (for png, tiff support)
+    if len(image.shape) == 3 and image.shape[2] > n_output_channels:
+        logger.trace(
+            "Image is in RGBA format. Converting to RGB by dropping the excess (e.g. alpha) channels."
+        )
+        image = image[:, :, :n_output_channels]
     return image

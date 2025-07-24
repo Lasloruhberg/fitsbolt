@@ -202,7 +202,10 @@ class TestImageIO:
         gray_data = np.zeros((50, 50), dtype=np.uint8)
         gray_data[10:40, 10:40] = 200
 
-        processed = process_image(gray_data, test_config, convert_to_rgb=True)
+        processed = process_image(
+            gray_data,
+            test_config,
+        )
         assert processed.shape == (
             test_config.size[0],
             test_config.size[1],
@@ -215,7 +218,10 @@ class TestImageIO:
         rgba_data[10:40, 10:40, :3] = [255, 128, 64]  # RGB values
         rgba_data[10:40, 10:40, 3] = 255  # Alpha
 
-        processed = process_image(rgba_data, test_config, convert_to_rgb=True)
+        processed = process_image(
+            rgba_data,
+            test_config,
+        )
         assert processed.shape == (
             test_config.size[0],
             test_config.size[1],
@@ -321,7 +327,10 @@ class TestImageIO:
         test_rgba[height // 2 :, width // 2 :, 3] = 0  # Zero alpha
 
         # Test RGB conversion
-        rgb_img = process_image(test_rgba, test_config, convert_to_rgb=True)
+        rgb_img = process_image(
+            test_rgba,
+            test_config,
+        )
 
         # Test shape and type
         assert rgb_img.shape == (height, width, 3), "RGBA should convert to RGB shape"
@@ -374,7 +383,10 @@ class TestImageIO:
         assert gray_fits.ndim == 2, "Test requires a 2D (grayscale) FITS image"
 
         # Now process with RGB conversion
-        rgb_fits = process_image(gray_fits, test_config, convert_to_rgb=True)
+        rgb_fits = process_image(
+            gray_fits,
+            test_config,
+        )
 
         # Verify RGB conversion
         assert rgb_fits.shape[2] == 3, "Grayscale FITS should be converted to RGB"
@@ -438,7 +450,10 @@ class TestImageIO:
         assert img.shape == (50, 50, 3), "Should read all 3 channels"
 
         # Now process with RGB conversion
-        processed = process_image(img, test_config, convert_to_rgb=True)
+        processed = process_image(
+            img,
+            test_config,
+        )
 
         # After processing, the shape should match n_output_channels
         assert processed.shape == (
@@ -479,7 +494,10 @@ class TestImageIO:
         ), f"Should read data with shape matching n_output_channels={test_config.n_output_channels}, got {img_four.shape}"
 
         # Now process with RGB conversion
-        processed_four = process_image(img_four, test_config, convert_to_rgb=True)
+        processed_four = process_image(
+            img_four,
+            test_config,
+        )
 
         # After processing, it should be (50, 50, 3)
         expected_shape = (test_config.size[0], test_config.size[1], test_config.n_output_channels)
@@ -555,7 +573,10 @@ class TestImageIO:
             assert img.shape == (50, 50, 3), "Should have n_output_channels=3 dimensions"
 
             # Process with RGB conversion - should work by filling in a zero channel
-            processed = process_image(img, test_config, convert_to_rgb=True)
+            processed = process_image(
+                img,
+                test_config,
+            )
 
             # Check that we have 3 channels now
             assert processed.shape == (
@@ -750,7 +771,10 @@ class TestImageIO:
             img = _read_image(temp_fits_path, test_cfg)
             assert img.shape == (50, 50, 3), "Should read all 3 channels"
 
-            processed = process_image(img, test_cfg, convert_to_rgb=True)
+            processed = process_image(
+                img,
+                test_cfg,
+            )
             assert processed.shape == (50, 50, 3), "Should maintain 3 channels"
 
             # Verify that at least one channel has data (channel 1 should have data from EXT1)
@@ -822,7 +846,10 @@ class TestImageIO:
             ), "Channel 2 should be weighted average 3.5"
 
             # Process the image
-            processed = process_image(img, test_config, convert_to_rgb=True)
+            processed = process_image(
+                img,
+                test_config,
+            )
 
             # Check that processed image maintains the expected dimensions
             assert processed.shape == (

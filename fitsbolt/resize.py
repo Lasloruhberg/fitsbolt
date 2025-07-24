@@ -57,7 +57,6 @@ def resize_images(
             image = _resize_image(
                 image,
                 cfg,
-                convert_to_rgb=True,
             )
             return image
         except Exception as e:

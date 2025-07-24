@@ -11,37 +11,9 @@ from fitsbolt.resize import _resize_image
 from fitsbolt.read import _read_image
 
 
-# TODO write public call wrapper process_image
-# TODO 1 external function per file
-# TODO rename process image?, rewrite into 3 functions that users cna
-# TODO convert_to rgb sensible?
-
-
-def _convert_to_rgb(image, convert_to_rgb=True, image_source="array"):
-    # Convert to RGB if requested
-    if convert_to_rgb:
-        # Handle grayscale images
-        if len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
-            image = np.stack((image,) * 3, axis=-1)
-        # Handle RGBA images
-        elif len(image.shape) == 3 and image.shape[2] > 3:
-            logger.trace(
-                f"Image {image_source} is in RGBA format. Converting to RGB by dropping the alpha channel."
-            )
-            image = image[:, :, :3]
-
-        # Validate RGB structure after conversion
-        if convert_to_rgb:
-            assert (
-                len(image.shape) == 3 and image.shape[2] == 3
-            ), f"After RGB conversion, image {image_source} has unexpected shape: {image.shape}"
-    return image
-
-
 def _process_image(
     image,
     cfg,
-    convert_to_rgb=True,
     image_source="array",
 ):
     """
@@ -49,14 +21,11 @@ def _process_image(
     Args:
         image (numpy.ndarray): Image array to process
         cfg: Configuration object containing size, normalisation_method
-        convert_to_rgb (bool): Whether to convert grayscale/RGBA to RGB
         image_source (str): Source of the image for logging
     Returns:
         numpy.ndarray: Processed image array as uint8
     """
     try:
-        image = _convert_to_rgb(image, convert_to_rgb=convert_to_rgb, image_source=image_source)
-
         logger.trace(f"Normalising image with setting {cfg.normalisation_method}")
         image = _normalise_image(image, cfg=cfg)
 
@@ -69,13 +38,13 @@ def _process_image(
         raise e
 
 
-def _load_image(filepath, cfg, convert_to_rgb=True):
+def _load_image(filepath, cfg):
     try:
         # Read raw image data
         image = _read_image(filepath, cfg)
 
         # Process the image using the centralized processing function
-        return _process_image(image, cfg, convert_to_rgb=convert_to_rgb, image_source=filepath)
+        return _process_image(image, cfg, image_source=filepath)
 
     except Exception as e:
         logger.error(f"Error reading image {filepath}: {e}")
@@ -183,7 +152,6 @@ def load_and_process_images(
             image = _load_image(
                 filepath,
                 cfg,
-                convert_to_rgb=True,
             )
             return image
         except Exception as e:

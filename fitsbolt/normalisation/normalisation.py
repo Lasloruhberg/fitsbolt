@@ -441,7 +441,6 @@ def normalise_images(
             image = _normalise_image(
                 image,
                 cfg,
-                convert_to_rgb=True,
             )
             return image
         except Exception as e:
