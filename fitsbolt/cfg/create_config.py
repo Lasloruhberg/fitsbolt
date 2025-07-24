@@ -4,6 +4,8 @@ from loguru import logger
 
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 
+SUPPORTED_IMAGE_EXTENSIONS = {".fits", ".jpg", ".jpeg", ".png", ".tiff"}
+
 
 def create_config(
     output_dtype=np.uint8,

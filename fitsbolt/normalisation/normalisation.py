@@ -1,6 +1,8 @@
+import sys
 import numpy as np
 from loguru import logger
-
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
 
 from skimage.util import img_as_ubyte, img_as_uint, img_as_float32
 
@@ -14,6 +16,7 @@ from astropy.visualization import (
 )
 
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.cfg.create_config import create_config
 
 
 def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
@@ -317,7 +320,7 @@ def _asinh_normalisation(data, cfg):
         return _conversiononly_normalisation(data, cfg=cfg)
 
 
-def normalise_image(data, cfg):
+def _normalise_image(data, cfg):
     """Normalises all images based on the selected normalisation option
 
     If None is selected and a uint16 array given, it is linearly scaled to uint8
@@ -353,3 +356,122 @@ def normalise_image(data, cfg):
     else:
         logger.critical(f"Normalisation method {method} not implemented")
         return _conversiononly_normalisation(data, cfg=cfg)
+
+
+def normalise_images(
+    images,
+    normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+    num_workers=4,
+    norm_maximum_value=None,
+    norm_minimum_value=None,
+    norm_log_calculate_minimum_value=False,
+    norm_crop_for_maximum_value=None,
+    norm_asinh_scale=[0.7, 0.7, 0.7],
+    norm_asinh_clip=[99.8, 99.8, 99.8],
+    desc="Loading images",
+    show_progress=True,
+):
+    """Load and process multiple images in parallel.
+
+    Args:
+        images (list): image or list of images to normalise
+        cfg (DotMap, optional): Configuration settings. Defaults to None.
+        output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
+        size (list, optional): Target size for image resizing. Defaults to [224, 224].
+        fits_extension (int, str, list, optional): The FITS extension(s) to use. Can be:
+                                               - An integer index
+                                               - A string extension name
+                                               - A list of integers or strings to combine multiple extensions
+                                               Uses the first extension (0) if None.
+        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        normalisation_method (NormalisationMethod, optional): Normalisation method to use.
+                                                Defaults to NormalisationMethod.CONVERSION_ONLY.
+        channel_combination (dict, optional): Dictionary defining how to combine FITS extensions into output channels.
+                                                Defaults to None.
+        num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
+        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None.
+        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None.
+        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
+                                                (normally defaults to 0). Defaults to False.
+        norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
+        norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
+        norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
+        filepaths (list): List of image filepaths to load
+        size (tuple, optional): Size to resize images to (height, width)
+        desc (str): Description for the progress bar
+        show_progress (bool): Whether to show a progress bar
+
+    Returns:
+        list: List of images for successfully loaded images
+    """
+    # check if input is a single filepath or a list
+    if not isinstance(images, (list, np.ndarray)):
+        return_single = True
+        images = [images]
+
+    cfg = create_config(
+        normalisation_method=normalisation_method,
+        num_workers=num_workers,
+        norm_maximum_value=norm_maximum_value,
+        norm_minimum_value=norm_minimum_value,
+        norm_log_calculate_minimum_value=norm_log_calculate_minimum_value,
+        norm_crop_for_maximum_value=norm_crop_for_maximum_value,
+        norm_asinh_scale=norm_asinh_scale,
+        norm_asinh_clip=norm_asinh_clip,
+    )
+    # initialise logger
+    logger.remove()
+
+    # Add a new logger configuration for console output
+    logger.add(
+        sys.stderr,
+        colorize=True,
+        level=cfg.log_level.upper(),
+        format="<green>{time:HH:mm:ss}</green>|astro-loader-<blue>{level}</blue>| <level>{message}</level>",
+    )
+
+    logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
+
+    logger.debug(
+        f"Normalising {len(images)} images in parallel with normalisation: {cfg.normalisation_method}"
+    )
+
+    def normalise_single_image(image):
+        try:
+            image = _normalise_image(
+                image,
+                cfg,
+                convert_to_rgb=True,
+            )
+            return image
+        except Exception as e:
+            logger.error(f"Error loading {image}: {str(e)}")
+            return None
+
+    # Use ThreadPoolExecutor for parallel loading
+    with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
+        if show_progress:
+            results = list(
+                tqdm(
+                    executor.map(normalise_single_image, images),
+                    desc=desc,
+                    total=len(images),
+                )
+            )
+        else:
+            results = list(executor.map(normalise_single_image, images))
+
+    # Filter out None results (failed loads)
+    results = [r for r in results if r is not None]
+
+    logger.debug(f"Successfully loaded {len(results)} of {len(images)} images")
+    if return_single:
+        # If only one image was requested, return it directly
+        if len(results) == 1:
+            return results[0]
+        else:
+            logger.warning(
+                "Multiple images loaded but only one was requested. Returning the first image."
+            )
+            return results[0]
+    return results
