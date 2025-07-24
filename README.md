@@ -14,11 +14,54 @@ pip install git+https://github.com/Lasloruhberg/fitsbolt.git
 
 ## Quick Start
 
-### Loading Multiple Images
+### Using Individual Processing Functions
+
+fitsbolt now provides individual functions for each processing step, allowing you to have more granular control over your image processing pipeline:
 
 ```python
-from fitsbolt.image_loader import load_and_process_images
-from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
+import fitsbolt
+import numpy as np
+
+# List of image paths
+filepaths = ["image1.fits", "image2.fits", "image3.jpg"]
+
+# Step 1: Read images
+raw_images = fitsbolt.read_images(
+    filepaths=filepaths,
+    fits_extension=0,
+    num_workers=4,
+    show_progress=True
+)
+
+# Step 2: Normalise images  
+normalized_images = fitsbolt.normalise_images(
+    images=raw_images,
+    normalisation_method=fitsbolt.NormalisationMethod.ASINH,
+    norm_asinh_scale=[0.7, 0.7, 0.7],
+    norm_asinh_clip=[99.8, 99.8, 99.8],
+    show_progress=True
+)
+
+# Step 3: Resize images
+final_images = fitsbolt.resize_images(
+    images=normalized_images,
+    size=[224, 224],
+    interpolation_order=1,
+    output_dtype=np.uint8,
+    show_progress=True
+)
+
+print(f"Processed {len(final_images)} images")
+for i, img in enumerate(final_images):
+    print(f"Image {i}: shape={img.shape}, dtype={img.dtype}")
+```
+
+### Using the Complete Pipeline (Original Method)
+
+For convenience, you can still use the original all-in-one function:
+
+```python
+from fitsbolt import load_and_process_images, NormalisationMethod
 import numpy as np
 
 # List of image paths
@@ -34,38 +77,105 @@ results = load_and_process_images(
     show_progress=True                                  # Show progress bar
 )
 
-# Results contains tuples of (filepath, processed_image)
-for path, img in results:
-    print(f"Loaded {path}, shape: {img.shape}, dtype: {img.dtype}")
+# Results contains processed images
+for i, img in enumerate(results):
+    print(f"Loaded image {i}, shape: {img.shape}, dtype: {img.dtype}")
 ```
 
-### Custom Image Processing
+### Advanced Usage Examples
 
-For cases where you have your own image loading pipeline but want to use fitsbolt's processing capabilities:
+#### Processing Single Images
 
 ```python
+import fitsbolt
 import numpy as np
-from fitsbolt.image_loader import process_image
-from fitsbolt.cfg.create_config import create_config
-from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 
-# Load image data using your own method
-raw_image = your_image_loading_function()
+# Process a single image file
+single_image = fitsbolt.read_images("galaxy.fits")[0]
+normalised = fitsbolt.normalise_images([single_image], 
+                                     normalisation_method=fitsbolt.NormalisationMethod.ZSCALE)[0]
+resized = fitsbolt.resize_images([normalised], size=[512, 512])[0]
+```
 
-# Create configuration
-cfg = create_config(
-    size=[224, 224],
-    normalisation_method=NormalisationMethod.ZSCALE,
-    output_dtype=np.uint8,
-    interpolation_order=1
+#### Custom Channel Combination for Multi-Extension FITS
+
+```python
+import fitsbolt
+import numpy as np
+
+# Custom channel mapping for RGB from 3 FITS extensions
+channel_map = np.array([
+    [0.7, 0.3, 0.0],  # R = 70% ext0 + 30% ext1
+    [0.0, 1.0, 0.0],  # G = 100% ext1
+    [0.0, 0.5, 0.5]   # B = 50% ext1 + 50% ext2
+])
+
+# Read multi-extension FITS files
+multi_ext_images = fitsbolt.read_images(
+    filepaths=["multi_ext.fits"],
+    fits_extension=[0, 1, 2],
+    channel_combination=channel_map
 )
+```
 
-# Process the image
-processed_image = process_image(
-    image=raw_image,
-    cfg=cfg,
-    convert_to_rgb=True,
-    image_source="custom_source"
+## API Overview
+
+### Individual Processing Functions
+
+fitsbolt provides three main processing functions that can be used independently:
+
+#### `fitsbolt.read_images()`
+Reads image files and returns raw image arrays.
+
+```python
+images = fitsbolt.read_images(
+    filepaths=["img1.fits", "img2.jpg"],
+    fits_extension=0,           # FITS extension to use
+    channel_combination=None,   # Custom channel mapping
+    num_workers=4,             # Parallel processing
+    show_progress=True         # Progress bar
+)
+```
+
+#### `fitsbolt.normalise_images()`
+Normalizes image arrays using various astronomical-optimized methods.
+
+```python
+normalized = fitsbolt.normalise_images(
+    images=raw_images,
+    normalisation_method=fitsbolt.NormalisationMethod.ASINH,
+    norm_asinh_scale=[0.7, 0.7, 0.7],
+    norm_asinh_clip=[99.8, 99.8, 99.8],
+    num_workers=4,
+    show_progress=True
+)
+```
+
+#### `fitsbolt.resize_images()`
+Resizes image arrays to specified dimensions.
+
+```python
+resized = fitsbolt.resize_images(
+    images=normalized_images,
+    size=[224, 224],           # Target size [height, width]
+    interpolation_order=1,     # 0-5, higher = smoother
+    output_dtype=np.uint8,     # Output data type
+    show_progress=True
+)
+```
+
+### Complete Pipeline Function
+
+#### `fitsbolt.load_and_process_images()`
+Combines all three steps in a single function call.
+
+```python
+processed = fitsbolt.load_and_process_images(
+    filepaths=["img1.fits", "img2.jpg"],
+    size=[224, 224],
+    normalisation_method=fitsbolt.NormalisationMethod.ASINH,
+    fits_extension=0,
+    num_workers=4
 )
 ```
 
