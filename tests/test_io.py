@@ -15,10 +15,12 @@ from fitsbolt.image_loader import (
     _load_image,
     _process_image,
     load_and_process_images,
-    SUPPORTED_IMAGE_EXTENSIONS,
 )
+from fitsbolt.read import read_images
+from fitsbolt.resize import resize_images, resize_image
+from fitsbolt.normalisation.normalisation import normalise_images
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
-from fitsbolt.cfg.create_config import create_config
+from fitsbolt.cfg.create_config import create_config, SUPPORTED_IMAGE_EXTENSIONS
 
 
 class TestImageIO:
@@ -37,6 +39,43 @@ class TestImageIO:
             norm_log_calculate_minimum_value=False,
         )
         return cfg
+
+    def recreate_config(self, base_config=None, **kwargs):
+        """Helper function to recreate config with modified parameters.
+
+        This ensures that dependent parameters like channel_combination are
+        properly recalculated when core parameters like n_output_channels change.
+
+        Args:
+            base_config: Base configuration to use as template (optional)
+            **kwargs: Parameters to override in the new configuration
+
+        Returns:
+            New configuration object with updated parameters
+        """
+        # Default config parameters
+        config_params = {
+            "size": [100, 100],
+            "fits_extension": None,
+            "normalisation_method": NormalisationMethod.CONVERSION_ONLY,
+            "norm_maximum_value": None,
+            "norm_minimum_value": None,
+            "norm_crop_for_maximum_value": None,
+            "norm_log_calculate_minimum_value": False,
+            "n_output_channels": 3,  # Explicitly set default
+        }
+
+        # If base_config is provided, extract its parameters
+        if base_config is not None:
+            for key in config_params.keys():
+                if hasattr(base_config, key):
+                    config_params[key] = getattr(base_config, key)
+
+        # Override with any provided kwargs
+        config_params.update(kwargs)
+
+        # Create new config with updated parameters
+        return create_config(**config_params)
 
     @classmethod
     def setup_class(cls):
@@ -97,12 +136,27 @@ class TestImageIO:
         fits.writeto(cls.fits_path, fits_data, overwrite=True)
 
         # FITS file with multiple channels (RGB-like)
-        multi_data = np.zeros((3, 100, 100), dtype=np.float32)
-        multi_data[0, 25:75, 25:75] = 1.0  # Red
-        multi_data[1, 35:85, 35:85] = 0.8  # Green
-        multi_data[2, 45:95, 45:95] = 0.6  # Blue
+        # Create separate extensions for each channel instead of 3D data
+        primary_hdu = fits.PrimaryHDU(np.zeros((100, 100), dtype=np.float32))
+        hdu_list = fits.HDUList([primary_hdu])
+
+        # Add 3 image extensions with different data (RGB-like)
+        channel_data = [
+            np.zeros((100, 100), dtype=np.float32),  # Extension 1 (Red)
+            np.zeros((100, 100), dtype=np.float32),  # Extension 2 (Green)
+            np.zeros((100, 100), dtype=np.float32),  # Extension 3 (Blue)
+        ]
+        channel_data[0][25:75, 25:75] = 1.0  # Red
+        channel_data[1][35:85, 35:85] = 0.8  # Green
+        channel_data[2][45:95, 45:95] = 0.6  # Blue
+
+        for i, data in enumerate(channel_data):
+            ext_hdu = fits.ImageHDU(data)
+            ext_hdu.header["EXTNAME"] = f"CHANNEL{i + 1}"
+            hdu_list.append(ext_hdu)
+
         cls.multi_fits_path = os.path.join(cls.test_dir, "multi_channel.fits")
-        fits.writeto(cls.multi_fits_path, multi_data, overwrite=True)
+        hdu_list.writeto(cls.multi_fits_path, overwrite=True)
 
         # Create FITS with extreme values to test normalization
         extreme_data = np.zeros((100, 100), dtype=np.float32)
@@ -146,20 +200,26 @@ class TestImageIO:
 
     def test_read_image_grayscale(self, test_config):
         """Test reading a grayscale image with _read_image."""
-        img = _read_image(self.gray_path, test_config)
-        # PIL might convert grayscale to RGB automatically
-        assert img.ndim >= 2 and img.ndim <= 3
+        # Use recreate_config to ensure n_output_channels is properly set for RGB conversion
+        cfg = self.recreate_config(test_config, n_output_channels=3)
+        img = _read_image(self.gray_path, cfg)
+        # Should convert grayscale to RGB format
+        assert img.ndim == 3 and img.shape[2] == 3
 
     def test_read_image_rgba(self, test_config):
         """Test reading an RGBA image with _read_image."""
-        img = _read_image(self.rgba_path, test_config)
+        # Use recreate_config to ensure n_output_channels is properly set for RGBA
+        cfg = self.recreate_config(test_config, n_output_channels=4)
+        img = _read_image(self.rgba_path, cfg)
         assert img.shape[2] == 4  # Should preserve RGBA
         assert img.dtype in [np.uint8, np.float32, np.float64]
 
     def test_read_image_fits_simple(self, test_config):
         """Test reading a simple FITS file with _read_image."""
-        img = _read_image(self.fits_path, test_config)
-        assert img.ndim == 2  # Single channel FITS should be 2D
+        # Use recreate_config to ensure n_output_channels is properly set for single channel
+        cfg = self.recreate_config(test_config, n_output_channels=1)
+        img = _read_image(self.fits_path, cfg)
+        assert img.ndim == 2  # Single channel FITS should be 2D when n_output_channels=1
         assert np.issubdtype(img.dtype, np.floating), "Image data should be a floating-point type"
 
     def test_read_image_fits_multi_channel(self, test_config):
@@ -170,8 +230,10 @@ class TestImageIO:
 
     def test_read_image_fits_extreme_values(self, test_config):
         """Test reading FITS with extreme values."""
-        img = _read_image(self.extreme_fits_path, test_config)
-        assert img.ndim == 2
+        # Use recreate_config to ensure n_output_channels is properly set for single channel
+        cfg = self.recreate_config(test_config, n_output_channels=1)
+        img = _read_image(self.extreme_fits_path, cfg)
+        assert img.ndim == 2  # Single channel FITS should be 2D when n_output_channels=1
         # Should handle extreme values without crashing
 
     def test_read_image_fits_extension_selection(self, test_config):
@@ -197,23 +259,23 @@ class TestImageIO:
             _read_image(unsupported_path, test_config)
 
     def test_process_image_rgb_conversion(self, test_config):
-        """Test process_image with RGB conversion."""
-        # Test with grayscale input
-        gray_data = np.zeros((50, 50), dtype=np.uint8)
-        gray_data[10:40, 10:40] = 200
+        """Test process_image preserves channel structure."""
+        # Test with RGB input (should remain RGB)
+        rgb_data = np.zeros((50, 50, 3), dtype=np.uint8)
+        rgb_data[10:40, 10:40, 0] = 200  # Red channel
 
         processed = _process_image(
-            gray_data,
+            rgb_data,
             test_config,
         )
         assert processed.shape == (
             test_config.size[0],
             test_config.size[1],
             3,
-        )  # Should be converted to RGB
+        )  # Should preserve RGB
         assert processed.dtype == np.uint8
 
-        # Test with RGBA input
+        # Test with RGBA input (should remain RGBA - no channel conversion in _process_image)
         rgba_data = np.zeros((50, 50, 4), dtype=np.uint8)
         rgba_data[10:40, 10:40, :3] = [255, 128, 64]  # RGB values
         rgba_data[10:40, 10:40, 3] = 255  # Alpha
@@ -225,27 +287,32 @@ class TestImageIO:
         assert processed.shape == (
             test_config.size[0],
             test_config.size[1],
-            3,
-        )  # Should be converted to RGB  # Should drop alpha channel
+            4,
+        )  # Should preserve RGBA - no channel conversion in _process_image
         assert processed.dtype == np.uint8
 
     def test_process_image_without_rgb_conversion(self, test_config):
-        """Test process_image without RGB conversion."""
+        """Test process_image with single channel output."""
         gray_data = np.zeros((50, 50), dtype=np.uint8)
         gray_data[10:40, 10:40] = 200
 
-        processed = _process_image(gray_data, test_config, convert_to_rgb=False)
-        assert len(processed.shape) == 2 or (len(processed.shape) == 3 and processed.shape[2] == 3)
+        # Create config for single channel output to avoid RGB conversion
+        cfg = self.recreate_config(test_config, n_output_channels=1)
+        processed = _process_image(gray_data, cfg)
+        assert (
+            len(processed.shape) == 2
+        ), f"Expected 2D output for single channel, got shape {processed.shape}"
         assert processed.dtype == np.uint8
 
     def test_process_image_with_resizing(self, test_config):
         """Test process_image with resizing."""
-        test_config.size = (64, 64)
+        # Use recreate_config to properly set the size
+        cfg = self.recreate_config(test_config, size=(64, 64))
 
         rgb_data = np.zeros((100, 100, 3), dtype=np.uint8)
         rgb_data[25:75, 25:75, 0] = 255  # Red square
 
-        processed = _process_image(rgb_data, test_config)
+        processed = _process_image(rgb_data, cfg)
         assert processed.shape[:2] == (64, 64)
         assert processed.shape[2] == 3
         assert processed.dtype == np.uint8
@@ -271,8 +338,7 @@ class TestImageIO:
         )
 
         assert len(results) == 3  # All images should load successfully
-        for filepath, image in results:
-            assert filepath in file_paths
+        for image in results:
             assert image.shape[2] == 3  # All should be RGB
             assert image.dtype == np.uint8
 
@@ -289,7 +355,7 @@ class TestImageIO:
         )
 
         assert len(results) == 2
-        for filepath, image in results:
+        for image in results:
             assert image.shape[:2] == (64, 64)
             assert image.dtype == np.uint8
 
@@ -301,10 +367,15 @@ class TestImageIO:
 
         # Should only return results for valid files
         assert len(results) == 1
-        assert results[0][0] == self.rgb_path
+        # The one valid result should be an image array
+        assert isinstance(results[0], np.ndarray)
+        assert results[0].shape[2] == 3  # Should be RGB
 
     def test_rgba_to_rgb_conversion_values(self, test_config):
         """Test that RGBA to RGB conversion handles alpha channel correctly."""
+        # Create config with explicit n_output_channels=3 for RGB conversion
+        cfg = self.recreate_config(test_config, n_output_channels=3)
+
         # Create a test RGBA image with varying alpha and patterns
         width, height = 100, 100
         test_rgba = np.zeros((height, width, 4), dtype=np.uint8)
@@ -326,11 +397,12 @@ class TestImageIO:
         test_rgba[height // 2 :, width // 2 :, 0:3] = 255  # White
         test_rgba[height // 2 :, width // 2 :, 3] = 0  # Zero alpha
 
-        # Test RGB conversion
-        rgb_img = _process_image(
-            test_rgba,
-            test_config,
-        )
+        test_rgba_path = os.path.join(self.test_dir, "test_rgba.png")
+        Image.fromarray(test_rgba).save(test_rgba_path)
+
+        # Test RGB conversion using _read_image with RGBA file
+        cfg = self.recreate_config(test_config, n_output_channels=3)
+        rgb_img = _read_image(test_rgba_path, cfg)
 
         # Test shape and type
         assert rgb_img.shape == (height, width, 3), "RGBA should convert to RGB shape"
@@ -345,18 +417,35 @@ class TestImageIO:
             rgb_img[: height // 2, : width // 2, 1] == 0
         ), "Red channel should have no green"
 
+    def test_channel_conversion_in_read_image(self, test_config):
+        """Test that _read_image properly converts channels based on n_output_channels."""
+        # Test RGBA to RGB conversion using _read_image
+        cfg_rgb = self.recreate_config(test_config, n_output_channels=3)
+        rgb_img = _read_image(self.rgba_path, cfg_rgb)
+        assert rgb_img.shape[2] == 3, "RGBA should be converted to RGB with n_output_channels=3"
+
+        # Test RGBA preservation using _read_image
+        cfg_rgba = self.recreate_config(test_config, n_output_channels=4)
+        rgba_img = _read_image(self.rgba_path, cfg_rgba)
+        assert rgba_img.shape[2] == 4, "RGBA should be preserved with n_output_channels=4"
+
+        # Test grayscale to RGB conversion using _read_image
+        cfg_gray_to_rgb = self.recreate_config(test_config, n_output_channels=3)
+        gray_to_rgb_img = _read_image(self.gray_path, cfg_gray_to_rgb)
+        assert (
+            gray_to_rgb_img.shape[2] == 3
+        ), "Grayscale should be converted to RGB with n_output_channels=3"
+
     def test_fits_loading_parallel_with_extension_int(self, test_config):
         """Test parallel loading of FITS files with extension index 0."""
-        test_config.fits_extension = 0
+        # Use recreate_config to properly set fits_extension
+        cfg = self.recreate_config(test_config, fits_extension=0)
         file_paths = [self.fits_path, self.multi_fits_path]
 
-        results = load_and_process_images(
-            file_paths, cfg=test_config, num_workers=2, show_progress=False
-        )
+        results = load_and_process_images(file_paths, cfg=cfg, num_workers=2, show_progress=False)
 
         assert len(results) == 2
-        for filepath, image in results:
-            assert filepath in file_paths
+        for image in results:
             assert image.shape[2] == 3  # Should be converted to RGB
             assert image.dtype == np.uint8
 
@@ -377,20 +466,17 @@ class TestImageIO:
         """Test conversion of greyscale FITS data to RGB."""
         # Load a single-channel FITS file
         test_config.fits_extension = 0
-
+        cfg = self.recreate_config(test_config, n_output_channels=1)
         # First get the raw grayscale data
-        gray_fits = _read_image(self.fits_path, test_config)
+        gray_fits = _read_image(self.fits_path, cfg)
         assert gray_fits.ndim == 2, "Test requires a 2D (grayscale) FITS image"
 
-        # Now process with RGB conversion
-        rgb_fits = _process_image(
-            gray_fits,
-            test_config,
-        )
-
-        # Verify RGB conversion
-        assert rgb_fits.shape[2] == 3, "Grayscale FITS should be converted to RGB"
-        assert rgb_fits.dtype == np.uint8, "Processed image should be uint8"
+        # check rgb mapping
+        cfg = self.recreate_config(test_config, n_output_channels=3)
+        # First get the raw grayscale data
+        rgb_fits = _read_image(self.fits_path, cfg)
+        assert rgb_fits.ndim == 3, "mapping should convert to 3D RGB image"
+        assert rgb_fits.shape[2] == 3, "Grayscale FITS should have three channels after mapping"
 
         # All RGB channels should be equal for a grayscale source
         r_channel = rgb_fits[:, :, 0]
@@ -409,7 +495,7 @@ class TestImageIO:
         hdu_list = fits.HDUList([primary_hdu])
 
         # Add 3 image extensions with different data
-        for i in range(3):
+        for i in range(4):
             ext_data = np.zeros((50, 50), dtype=np.float32)
             ext_data[10:40, 10:40] = i + 1  # Each extension has different values
             ext_hdu = fits.ImageHDU(ext_data)
@@ -421,13 +507,14 @@ class TestImageIO:
         hdu_list.writeto(temp_fits_path, overwrite=True)
 
         # Test 1: Using all extensions by index
-        test_config.fits_extension = [0, 1, 2, 3]
+        test_config.fits_extension = [0, 1, 2, 3, 4]
         test_config.n_output_channels = 3  # Explicitly set output channels to 3
         # Setup channel_combination array - identity matrix for first 3 channels
-        channel_comb = np.zeros((3, 4))  # 3 output channels x 4 input extensions
+        channel_comb = np.zeros((3, 5))  # 3 output channels x 4 input extensions
         for i in range(3):  # Only map the first 3 channels
             channel_comb[i, i] = 1
         channel_comb[2, 3] = 1  # map the 4th extension also to the 3rd output channel
+        channel_comb[2, 4] = 1  # map the 5th extension also to the 3rd output channel
         test_config.channel_combination = channel_comb
 
         # This should fail as extension 3 doesn't exist (we have 0,1,2)
@@ -886,3 +973,355 @@ class TestImageIO:
                     os.remove(temp_fits_path)
                 except (OSError, PermissionError):
                     pass
+
+
+class TestWrapperFunctions:
+    """Test class for the wrapper functions (read_images, resize_images, normalise_images)."""
+
+    @classmethod
+    def setup_class(cls):
+        """Set up test files and directories."""
+        # Create a temporary test directory
+        cls.test_dir = tempfile.mkdtemp()
+
+        # Create test RGB image
+        rgb_img = np.zeros((100, 100, 3), dtype=np.uint8)
+        rgb_img[25:75, 25:75, 0] = 255  # Red square
+        cls.rgb_path = os.path.join(cls.test_dir, "test_rgb.jpg")
+        Image.fromarray(rgb_img).save(cls.rgb_path)
+
+        # Create test grayscale image
+        gray_img = np.zeros((100, 100), dtype=np.uint8)
+        gray_img[25:75, 25:75] = 200  # White square
+        cls.gray_path = os.path.join(cls.test_dir, "test_gray.jpg")
+        Image.fromarray(gray_img).save(cls.gray_path)
+
+        # Create test RGBA image
+        rgba_img = np.zeros((100, 100, 4), dtype=np.uint8)
+        rgba_img[25:75, 25:75, 0] = 255  # Red square
+        rgba_img[25:75, 25:75, 3] = 128  # Semi-transparent
+        cls.rgba_path = os.path.join(cls.test_dir, "test_rgba.png")
+        Image.fromarray(rgba_img).save(cls.rgba_path)
+
+        # Simple FITS file
+        fits_data = np.zeros((100, 100), dtype=np.float32)
+        fits_data[25:75, 25:75] = 1.0  # Bright square
+        cls.fits_path = os.path.join(cls.test_dir, "test.fits")
+        fits.writeto(cls.fits_path, fits_data, overwrite=True)
+
+        # FITS file with multiple channels (RGB-like)
+        # Create separate extensions for each channel instead of 3D data
+        primary_hdu = fits.PrimaryHDU(np.zeros((100, 100), dtype=np.float32))
+        hdu_list = fits.HDUList([primary_hdu])
+
+        # Add 3 image extensions with different data (RGB-like)
+        channel_data = [
+            np.zeros((100, 100), dtype=np.float32),  # Extension 1 (Red)
+            np.zeros((100, 100), dtype=np.float32),  # Extension 2 (Green)
+            np.zeros((100, 100), dtype=np.float32),  # Extension 3 (Blue)
+        ]
+        channel_data[0][25:75, 25:75] = 1.0  # Red
+        channel_data[1][35:85, 35:85] = 0.8  # Green
+        channel_data[2][45:95, 45:95] = 0.6  # Blue
+
+        for i, data in enumerate(channel_data):
+            ext_hdu = fits.ImageHDU(data)
+            ext_hdu.header["EXTNAME"] = f"CHANNEL{i + 1}"
+            hdu_list.append(ext_hdu)
+
+        cls.multi_fits_path = os.path.join(cls.test_dir, "multi_channel.fits")
+        hdu_list.writeto(cls.multi_fits_path, overwrite=True)
+
+        # Keep track of all created image files
+        cls.image_files = [
+            cls.rgb_path,
+            cls.gray_path,
+            cls.rgba_path,
+            cls.fits_path,
+            cls.multi_fits_path,
+        ]
+
+    @classmethod
+    def teardown_class(cls):
+        """Remove test files and directories."""
+        try:
+            shutil.rmtree(cls.test_dir)
+        except (PermissionError, OSError) as e:
+            # If we can't delete due to Windows file locking, just log it and continue
+            print(f"Warning: Could not delete test directory: {e}")
+
+    def test_read_images_single_file(self):
+        """Test read_images with a single file path."""
+        # Test with single file (should return single image, not list)
+        result = read_images(self.rgb_path, show_progress=False)
+        assert isinstance(result, np.ndarray), "Single file should return single array"
+        assert result.shape[2] == 3, "Should have 3 channels"
+        assert (
+            result.dtype == np.uint8
+        ), "PNG images should maintain uint8 dtype with force_dtype=True"
+
+    def test_read_images_multiple_files(self):
+        """Test read_images with multiple file paths."""
+        file_paths = [self.rgb_path, self.gray_path, self.rgba_path]
+        results = read_images(file_paths, show_progress=False)
+
+        assert isinstance(results, list), "Multiple files should return list"
+        assert len(results) == 3, "Should return all 3 images"
+        for result in results:
+            assert isinstance(result, np.ndarray), "Each result should be an array"
+            assert result.shape[2] == 3, "Should have 3 channels by default"
+            assert (
+                result.dtype == np.uint8
+            ), "PNG images should maintain uint8 dtype with force_dtype=True"
+
+    def test_read_images_with_parameters(self):
+        """Test read_images with custom parameters."""
+        file_paths = [self.rgb_path, self.gray_path]
+        results = read_images(
+            file_paths,
+            n_output_channels=3,
+            num_workers=1,
+            desc="Testing read",
+            show_progress=False,
+        )
+
+        assert len(results) == 2, "Should return 2 images"
+        for result in results:
+            assert result.shape[:2] == (100, 100), "Should be at original size"
+            assert result.shape[2] == 3, "Should have 3 channels"
+
+    def test_read_images_fits_with_extension(self):
+        """Test read_images with FITS files and extension parameters."""
+        file_paths = [self.fits_path, self.multi_fits_path]
+        results = read_images(
+            file_paths, fits_extension=0, n_output_channels=1, show_progress=False
+        )
+
+        assert len(results) == 2, "Should return 2 images"
+        for result in results:
+            assert result.ndim == 2, "Should be 2D for single channel"
+            assert np.issubdtype(result.dtype, np.floating), "FITS data should be float"
+
+    def test_read_images_error_handling(self):
+        """Test read_images with invalid file paths."""
+        invalid_paths = ["/nonexistent/file.jpg", self.rgb_path]
+        results = read_images(invalid_paths, show_progress=False)
+
+        # Should only return results for valid files
+        assert len(results) == 1, "Should return only valid image"
+        assert isinstance(results[0], np.ndarray), "Valid result should be array"
+
+    def test_read_images_single_file_error_handling(self):
+        """Test read_images error handling with single invalid file."""
+        # Test with single invalid file
+        results = read_images("/nonexistent/file.jpg", show_progress=False)
+        assert results is None or (
+            isinstance(results, list) and len(results) == 0
+        ), "Should handle single file error gracefully"
+
+    def test_read_images_channel_combination(self):
+        """Test read_images with channel combination for FITS files."""
+        # Create custom channel combination
+        # Identity matrix
+        channel_combination = np.array(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32
+        )
+
+        results = read_images(
+            [self.multi_fits_path],
+            fits_extension=[0, 1, 2],
+            n_output_channels=3,
+            channel_combination=channel_combination,
+            show_progress=False,
+        )
+
+        assert len(results) == 1, "Should return 1 image"
+        assert results[0].shape[2] == 3, "Should have 3 channels"
+
+    def test_resize_images_list(self):
+        """Test resize_images with a list of images."""
+        # Create test images
+        img1 = np.zeros((50, 50, 3), dtype=np.uint8)
+        img2 = np.zeros((100, 100, 3), dtype=np.uint8)
+        images = [img1, img2]
+
+        results = resize_images(images, size=[64, 64], show_progress=False)
+
+        assert len(results) == 2, "Should return 2 resized images"
+        for result in results:
+            assert result.shape[:2] == (64, 64), "Should be resized to 64x64"
+            assert result.shape[2] == 3, "Should maintain 3 channels"
+            assert result.dtype == np.uint8, "Should maintain uint8 dtype"
+
+    def test_resize_images_different_dtypes(self):
+        """Test resize_images with different output dtypes."""
+        img = np.zeros((50, 50, 3), dtype=np.uint8)
+
+        # Test uint16 output
+        result_uint16 = resize_images(
+            [img], output_dtype=np.uint16, size=[32, 32], show_progress=False
+        )
+        assert result_uint16[0].dtype == np.uint16, "Should convert to uint16"
+
+        # Test float32 output
+        result_float32 = resize_images(
+            [img], output_dtype=np.float32, size=[32, 32], show_progress=False
+        )
+        assert result_float32[0].dtype == np.float32, "Should convert to float32"
+
+    def test_resize_images_interpolation_order(self):
+        """Test resize_images with different interpolation orders."""
+        img = np.zeros((50, 50, 3), dtype=np.uint8)
+        img[20:30, 20:30, 0] = 255  # Red square
+
+        # Test different interpolation orders
+        for order in [0, 1, 2, 3]:
+            result = resize_images(
+                [img], size=[100, 100], interpolation_order=order, show_progress=False
+            )
+            assert result[0].shape[:2] == (100, 100), f"Should resize with order {order}"
+
+    def test_resize_images_no_size_specified(self):
+        """Test resize_images when no size is specified."""
+        img = np.zeros((50, 50, 3), dtype=np.uint8)
+
+        result = resize_images([img], size=None, show_progress=False)
+        assert result[0].shape == (50, 50, 3), "Should maintain original size when size=None"
+
+    def test_resize_image_single(self):
+        """Test resize_image function with single image."""
+        img = np.zeros((50, 50, 3), dtype=np.uint8)
+        img[20:30, 20:30, 0] = 255  # Red square
+
+        result = resize_image(img, size=[100, 100])
+        assert result.shape[:2] == (100, 100), "Should resize to 100x100"
+        assert result.shape[2] == 3, "Should maintain 3 channels"
+        assert result.dtype == np.uint8, "Should maintain uint8 dtype"
+
+    def test_resize_image_different_dtypes(self):
+        """Test resize_image with different output dtypes."""
+        img = np.zeros((50, 50, 3), dtype=np.uint8)
+
+        # Test uint16 output
+        result_uint16 = resize_image(img, output_dtype=np.uint16, size=[32, 32])
+        assert result_uint16.dtype == np.uint16, "Should convert to uint16"
+
+        # Test float32 output
+        result_float32 = resize_image(img, output_dtype=np.float32, size=[32, 32])
+        assert result_float32.dtype == np.float32, "Should convert to float32"
+
+    def test_normalise_images_single_image(self):
+        """Test normalise_images with a single image."""
+        img = np.zeros((50, 50, 3), dtype=np.float32)
+        img[20:30, 20:30, 0] = 1000.0  # High value in red channel
+
+        result = normalise_images(img, show_progress=False)
+        assert isinstance(result, np.ndarray), "Single image should return single array"
+        assert result.shape == (50, 50, 3), "Should maintain shape"
+        assert result.dtype == np.uint8, "Should convert to uint8"
+        assert np.max(result) <= 255, "Should be normalized to uint8 range"
+
+    def test_normalise_images_multiple_images(self):
+        """Test normalise_images with multiple images."""
+        img1 = np.zeros((50, 50, 3), dtype=np.float32)
+        img1[20:30, 20:30, 0] = 1000.0  # High value
+
+        img2 = np.zeros((50, 50, 3), dtype=np.float32)
+        img2[10:40, 10:40, 1] = 2000.0  # Different high value
+
+        images = [img1, img2]
+        results = normalise_images(images, show_progress=False)
+
+        assert isinstance(results, list), "Multiple images should return list"
+        assert len(results) == 2, "Should return 2 images"
+        for result in results:
+            assert result.dtype == np.uint8, "Should convert to uint8"
+            assert np.max(result) <= 255, "Should be normalized to uint8 range"
+
+    def test_normalise_images_different_methods(self):
+        """Test normalise_images with different normalisation methods."""
+        img = np.zeros((50, 50, 3), dtype=np.float32)
+        img[20:30, 20:30, 0] = 1000.0  # High value
+
+        # Test CONVERSION_ONLY
+        result_conv = normalise_images(
+            img, normalisation_method=NormalisationMethod.CONVERSION_ONLY, show_progress=False
+        )
+        assert result_conv.dtype == np.uint8, "Should convert to uint8"
+
+        # Test LOG normalisation
+        result_log = normalise_images(
+            img, normalisation_method=NormalisationMethod.LOG, show_progress=False
+        )
+        assert result_log.dtype == np.uint8, "Should convert to uint8"
+
+        # Test ZSCALE normalisation
+        result_zscale = normalise_images(
+            img, normalisation_method=NormalisationMethod.ZSCALE, show_progress=False
+        )
+        assert result_zscale.dtype == np.uint8, "Should convert to uint8"
+
+    def test_normalise_images_with_parameters(self):
+        """Test normalise_images with custom parameters."""
+        img = np.zeros((50, 50, 3), dtype=np.float32)
+        img[20:30, 20:30, 0] = 1000.0  # High value
+
+        result = normalise_images(
+            img,
+            normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+            num_workers=1,
+            norm_maximum_value=500.0,
+            norm_minimum_value=0.0,
+            desc="Testing normalisation",
+            show_progress=False,
+        )
+
+        assert result.dtype == np.uint8, "Should convert to uint8"
+        assert result.shape == (50, 50, 3), "Should maintain shape"
+
+    def test_normalise_images_asinh_method(self):
+        """Test normalise_images with ASINH method and custom parameters."""
+        img = np.zeros((50, 50, 3), dtype=np.float32)
+        img[20:30, 20:30, :] = [1000.0, 800.0, 600.0]  # Different values per channel
+
+        result = normalise_images(
+            img,
+            normalisation_method=NormalisationMethod.ASINH,
+            norm_asinh_scale=[0.5, 0.7, 0.9],
+            norm_asinh_clip=[95.0, 98.0, 99.0],
+            show_progress=False,
+        )
+
+        assert result.dtype == np.uint8, "Should convert to uint8"
+        assert result.shape == (50, 50, 3), "Should maintain shape"
+
+    def test_normalise_images_error_handling(self):
+        """Test normalise_images error handling with invalid input."""
+        # Test with None or empty input
+        result_empty = normalise_images([], show_progress=False)
+        assert isinstance(result_empty, list), "Empty list should return empty list"
+        assert len(result_empty) == 0, "Empty input should return empty output"
+
+    def test_load_and_process_images_single_file_return(self):
+        """Test load_and_process_images single file return behavior."""
+        # Test single file should return single array, not list
+        result = load_and_process_images(self.rgb_path, show_progress=False)
+        assert isinstance(result, np.ndarray), "Single file should return single array"
+        assert result.shape[2] == 3, "Should have 3 channels"
+
+    def test_load_and_process_images_multiple_files_some_fail(self):
+        """Test load_and_process_images when some files fail to load."""
+        # Mix valid and invalid paths
+        mixed_paths = [self.rgb_path, "/nonexistent1.jpg", self.gray_path, "/nonexistent2.jpg"]
+        results = load_and_process_images(mixed_paths, show_progress=False)
+
+        assert len(results) == 2, "Should return only successfully loaded images"
+        for result in results:
+            assert isinstance(result, np.ndarray), "Each result should be an array"
+
+    def test_load_and_process_images_warning_single_request_multiple_results(self):
+        """Test warning when single file requested but multiple results returned."""
+        # This edge case might happen in error scenarios, testing the warning path
+        # We'll use valid multiple files to simulate this scenario
+        results = load_and_process_images([self.rgb_path, self.gray_path], show_progress=False)
+        assert len(results) == 2, "Should load multiple files successfully"

@@ -13,26 +13,23 @@ from fitsbolt.cfg.create_config import SUPPORTED_IMAGE_EXTENSIONS
 
 def read_images(
     filepaths,
-    size=[224, 224],
     fits_extension=None,
-    interpolation_order=1,
     n_output_channels=3,
     channel_combination=None,
     num_workers=4,
     desc="Reading images",
     show_progress=True,
+    force_dtype=True,
 ):
     """Load and process multiple images in parallel.
 
     Args:
         filepaths (list): filepath or list of image filepaths to load
-        size (list, optional): Target size for image resizing. Defaults to [224, 224].
         fits_extension (int, str, list, optional): The FITS extension(s) to use. Can be:
                                                - An integer index
                                                - A string extension name
                                                - A list of integers or strings to combine multiple extensions
                                                Uses the first extension (0) if None.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
         normalisation_method (NormalisationMethod, optional): Normalisation method to use.
                                                 Defaults to NormalisationMethod.CONVERSION_ONLY.
         n_output_channels (int, optional): Number of output channels for the image. Defaults to 3.
@@ -41,6 +38,8 @@ def read_images(
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
+        force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
+                                     like channel combination. Defaults to True.
 
     Returns:
         list: image or list of images for successfully read images
@@ -50,15 +49,16 @@ def read_images(
     if not isinstance(filepaths, (list, np.ndarray)):
         return_single = True
         filepaths = [filepaths]
+    else:
+        return_single = False
 
     # create internal configuration object
     cfg = create_config(
-        size=size,
         fits_extension=fits_extension,
-        interpolation_order=interpolation_order,
         n_output_channels=n_output_channels,
         channel_combination=channel_combination,
         num_workers=num_workers,
+        force_dtype=force_dtype,
     )
 
     # initialise logger
@@ -110,11 +110,14 @@ def read_images(
         # If only one image was requested, return it directly
         if len(results) == 1:
             return results[0]
-        else:
+        elif len(results) > 1:
             logger.warning(
                 "Multiple images loaded but only one was requested. Returning the first image."
             )
             return results[0]
+        else:
+            logger.error("No images were successfully loaded")
+            return None
     return results
 
 
@@ -148,6 +151,15 @@ def _read_image(filepath, cfg):
                 if fits_extension is None:
                     # Default to first extension (index 0)
                     image = hdul[0].data
+
+                    # Check if the loaded data is 3D when we expect 2D (single extension)
+                    if image.ndim == 3:
+                        logger.warning(
+                            f"FITS extension 0 in file {filepath} contains 3D data (shape: {image.shape}). "
+                            f"Single extension should be 2D. Replacing with black image."
+                        )
+                        # Create a 2D black image with the spatial dimensions of the original
+                        image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
                 elif isinstance(fits_extension, list):
                     # Handle list of extensions - need to load and combine them
                     extension_images = []
@@ -191,6 +203,15 @@ def _read_image(filepath, cfg):
                             raise ValueError(f"FITS extension {ext} in file {filepath} has no data")
 
                         # Record the shape for validation
+                        if ext_data.ndim > 2:
+                            logger.warning(
+                                f"FITS extension {ext} in file {filepath} has more than 2 dimensions. "
+                                f"Setting to empty image"
+                            )
+                            # use dim 1 as in both H,W,C or C,H,W this will work for square images
+                            ext_data = np.zeros(
+                                (ext_data.shape[1], ext_data.shape[1]), dtype=ext_data.dtype
+                            )
                         extension_images.append(ext_data)
                         extension_shapes.append(ext_data.shape)
 
@@ -209,15 +230,14 @@ def _read_image(filepath, cfg):
 
                     # Combine the extensions into n_output channels
                     # Do a linear combination based on the configuration
+                    original_dtype = extension_images[0].dtype if extension_images else None
                     if cfg.channel_combination is not None:
-                        weights = (
-                            cfg.channel_combination
-                        )  # Shape: (n_output_channels, n_fits_extensions)
-
-                        # Normalize weights
-                        weights /= np.sum(weights, axis=1, keepdims=True)
-                        # Perform dot product along channel dimension: output shape (H, W, 3)
-                        image = np.tensordot(weights, extension_images, axes=1)
+                        image = _apply_channel_combination(
+                            extension_images,
+                            cfg.channel_combination,
+                            original_dtype,
+                            cfg.force_dtype,
+                        )
                     else:
                         # Stack the extensions along a new dimension
                         image = np.stack(extension_images)
@@ -251,15 +271,33 @@ def _read_image(filepath, cfg):
                             f"FITS extension index {extension_idx} is out of bounds (0-{len(hdul) - 1})"
                         )
                     image = hdul[extension_idx].data
+
+                    # Check if the loaded data is 3D when we expect 2D (single extension)
+                    if image.ndim == 3:
+                        logger.warning(
+                            f"FITS extension {extension_idx} in file {filepath} contains 3D data (shape: {image.shape}). "
+                            f"Single extension should be 2D. Replacing with black image."
+                        )
+                        # Create a 2D black image with the spatial dimensions of the original
+                        image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
                 else:
                     # Try as string extension name
                     try:
                         image = hdul[fits_extension].data
+
+                        # Check if the loaded data is 3D when we expect 2D (single extension)
+                        if image.ndim == 3:
+                            logger.warning(
+                                f"FITS extension '{fits_extension}' in file {filepath} contains 3D data "
+                                f"(shape: {image.shape}). Single extension should be 2D. Replacing with black image."
+                            )
+                            # Create a 2D black image with the spatial dimensions of the original
+                            image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
                     except KeyError:
                         available_ext = [ext.name for ext in hdul if hasattr(ext, "name")]
                         logger.error(
                             f"FITS extension name '{fits_extension}' not found in file {filepath}. "
-                            + f"Available extensions: {available_ext}"
+                            f"Available extensions: {available_ext}"
                         )
                         raise KeyError(f"FITS extension name '{fits_extension}' not found")
             except Exception as e:
@@ -289,17 +327,6 @@ def _read_image(filepath, cfg):
                         f"FITS image {filepath} seems to be in Channel x Height x Width format. Transposing."
                     )
                     image = np.transpose(image, (1, 2, 0))
-            # Normalisation is done later
-            if image.dtype != np.uint8:
-                # Safe normalization that handles edge cases
-                img_min, img_max = image.min(), image.max()
-                if img_max <= img_min:
-                    # incorrect image, set to zero
-                    logger.warning(
-                        f"FITS image {filepath} has no valid data (min=max). Setting to zero."
-                    )
-                    image = np.zeros_like(image, dtype=np.uint8)
-
             # Validate that we have a valid image with at least 2 dimensions
             assert (
                 image.ndim >= 2 and image.ndim <= 3
@@ -319,11 +346,57 @@ def _read_image(filepath, cfg):
         n_output_channels=cfg.n_output_channels,
     )
 
-    assert (
-        len(image.shape) == 3 and image.shape[2] == cfg.n_output_channels
-    ), f"After reading, image has unexpected shape: {image.shape} - {filepath}"
+    # Validate output shape based on n_output_channels
+    if cfg.n_output_channels == 1:
+        assert (
+            len(image.shape) == 2
+        ), f"After reading, single channel image has unexpected shape: {image.shape} - {filepath}"
+    else:
+        assert (
+            len(image.shape) == 3 and image.shape[2] == cfg.n_output_channels
+        ), f"After reading, image has unexpected shape: {image.shape} - {filepath}"
 
+    # return H,W for single channel or H,W,C for multi-channel
     return image
+
+
+def _apply_channel_combination(
+    extension_images, channel_combination, original_dtype=None, force_dtype=True
+):
+    """Applies channel combination to the given extension images.
+
+    Args:
+        extension_images (list): list of extension images of shape (H, W), list length = n_fits_extensions.
+        channel_combination (numpy.ndarray): Array of channel combination weights (n_output_channels, n_fits_extensions).
+        original_dtype (numpy.dtype, optional): Original dtype of the input images.
+        force_dtype (bool, optional): If True, forces the output to maintain the original dtype. Defaults to True.
+
+    Returns:
+        numpy.ndarray: Combined image (H, W, n_output_channels).
+    """
+    weights = channel_combination  # Shape: (n_output_channels, n_fits_extensions)
+
+    # Normalize weights
+    weights /= np.sum(weights, axis=1, keepdims=True)
+    # Perform dot product along channel dimension: output shape (H, W, n_output_channels)
+    result = np.tensordot(weights, extension_images, axes=1)
+
+    # Force dtype if requested and original dtype is provided
+    if force_dtype and original_dtype is not None and result.dtype != original_dtype:
+        # Ensure the result stays within the valid range for the target dtype
+        if original_dtype == np.uint8:
+            result = np.clip(result, 0, 255).astype(original_dtype)
+        elif original_dtype == np.uint16:
+            result = np.clip(result, 0, 65535).astype(original_dtype)
+        elif original_dtype in [np.int8, np.int16, np.int32, np.int64]:
+            info = np.iinfo(original_dtype)
+            result = np.clip(result, info.min, info.max).astype(original_dtype)
+        elif original_dtype in [np.float16, np.float32, np.float64]:
+            result = result.astype(original_dtype)
+        else:
+            result = result.astype(original_dtype)
+
+    return result
 
 
 def _convert_greyscale_to_nchannels(image, n_output_channels):
@@ -339,7 +412,11 @@ def _convert_greyscale_to_nchannels(image, n_output_channels):
 
     # Handle grayscale images
     if len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
-        image = np.stack((image,) * n_output_channels, axis=-1)
+        if n_output_channels != 1:
+            image = np.stack((image,) * n_output_channels, axis=-1)
+        else:
+            # always return a 2D image if n_output_channels is 1
+            image = image[:, :, 0] if len(image.shape) == 3 else image
 
     # if e.g. rgb (n_output_channels == 3) is requested but an rgba png is loaded
     # Handle e.g. RGBA images (for png, tiff support)

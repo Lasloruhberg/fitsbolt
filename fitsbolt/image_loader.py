@@ -110,6 +110,8 @@ def load_and_process_images(
     if not isinstance(filepaths, (list, np.ndarray)):
         return_single = True
         filepaths = [filepaths]
+    else:
+        return_single = False
 
     if cfg is None:
         cfg = create_config(

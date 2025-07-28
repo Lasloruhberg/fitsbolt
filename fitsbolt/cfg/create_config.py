@@ -23,6 +23,7 @@ def create_config(
     norm_asinh_scale=[0.7, 0.7, 0.7],
     norm_asinh_clip=[99.8, 99.8, 99.8],
     log_level="INFO",
+    force_dtype=True,
 ):
     """Create a configuration object for loading and processing astronomical data.
 
@@ -47,6 +48,8 @@ def create_config(
         norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
         norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
         log_level (str, optional): Logging level. Defaults to "INFO".
+        force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
+                            like channel combination. Defaults to True.
 
     Returns:
         _type_: _description_
@@ -58,6 +61,7 @@ def create_config(
     cfg.size = size  # tuple of (height, width)
     cfg.n_output_channels = n_output_channels  # int, normally 3 for R,G,B
     cfg.num_workers = num_workers
+    cfg.force_dtype = force_dtype  # Force output to maintain original dtype after tensor operations
     # order of interpolation for resizing with skimage, 0-5
     cfg.interpolation_order = interpolation_order
     # Normalisation settings
@@ -146,6 +150,7 @@ def _return_required_and_optional_keys():
         "n_output_channels": [int, 1, None, False, None],
         # Required boolean parameters
         "normalisation.log_calculate_minimum_value": [bool, None, None, False, None],
+        "force_dtype": [bool, None, None, False, None],
         # Required parameters with allowed values
         "log_level": [
             str,

@@ -404,8 +404,16 @@ def normalise_images(
     Returns:
         list: List of images for successfully loaded images
     """
-    # check if input is a single filepath or a list
-    if not isinstance(images, (list, np.ndarray)):
+    # check if input is a single image array or a list of images
+    if isinstance(images, np.ndarray) and images.ndim >= 2:
+        # Single image array
+        return_single = True
+        images = [images]
+    elif isinstance(images, list):
+        # List of images
+        return_single = False
+    else:
+        # Single non-array image (shouldn't happen in normal use)
         return_single = True
         images = [images]
 
