@@ -183,32 +183,31 @@ def _conversiononly_normalisation(data, cfg):
             cfg.output_dtype: The desired output data type (np.uint8, np.uint16, np.float32)
 
     Returns:
-        numpy array: A converted image in the specified output dtype
+        numpy array: A converted image in the specified output dtype any float output will be between [0,1]
     """
-    # If input dtype already matches the requested output dtype, return as is
+    # If input dtype already matches the requested output dtype and it's float32,
+    # we still need to ensure it's normalized to [0,1] range
     if data.dtype == cfg.output_dtype:
-        return data
+        if np.issubdtype(cfg.output_dtype, np.floating):
+            # For float output, ensure data is in [0,1] range later on
+            pass
+
+        else:
+            # For integer dtypes, if they match, return as is
+            return data
 
     # Handle specific direct conversions for better precision
     if cfg.output_dtype == np.uint8:
         if data.dtype == np.uint16:
             # Direct conversion from uint16 to uint8 with proper scaling
             return _type_conversion(data / 65535.0, cfg)  # 65535 = 2^16 - 1
-
-        elif data.dtype == np.float32 or data.dtype == np.float64:
-            # For floating point data that's already in [0,1] range
-            if 0.0 <= np.min(data) <= np.max(data) <= 1.0:
-                return _type_conversion(data, cfg)
+        # if not matching dtype scale to [0,1] and convert
+        return _type_conversion((data - np.min(data)) / (np.max(data) - np.min(data)), cfg)
 
     elif cfg.output_dtype == np.uint16:
         if data.dtype == np.uint8:
             # Direct conversion from uint8 to uint16 with proper scaling
             return _type_conversion(data / 255.0, cfg)  # Scale to [0,1] then convert
-
-        elif data.dtype == np.float32 or data.dtype == np.float64:
-            # For floating point data that's already in [0,1] range
-            if 0.0 <= np.min(data) <= np.max(data) <= 1.0:
-                return _type_conversion(data, cfg)
 
     elif cfg.output_dtype == np.float32:
         if data.dtype == np.uint8:
@@ -219,7 +218,7 @@ def _conversiononly_normalisation(data, cfg):
             # Convert uint16 directly to float32 [0,1] range
             return _type_conversion(data / 65535.0, cfg)
 
-    # For any other case, use normalized conversion
+    # For any other case, use normalised conversion (e.g. for input floats)
     # get min or max from config if available
     maximum = _compute_max_value(data, cfg)
     minimum = _compute_min_value(data, cfg)
@@ -271,7 +270,7 @@ def _asinh_normalisation(data, cfg):
         Configuration object holding
         ``cfg.normalisation.asinh_scale`` and
         ``cfg.normalisation.asinh_clip``.  Each may be a scalar
-        or a three-element sequence.
+        or a n(typically 3)-element sequence.
         ``cfg.output_dtype``: The desired output data type.
 
     Returns
@@ -360,6 +359,7 @@ def _normalise_image(data, cfg):
 
 def normalise_images(
     images,
+    output_dtype=np.uint8,
     normalisation_method=NormalisationMethod.CONVERSION_ONLY,
     num_workers=4,
     norm_maximum_value=None,
@@ -375,19 +375,9 @@ def normalise_images(
 
     Args:
         images (list): image or list of images to normalise
-        cfg (DotMap, optional): Configuration settings. Defaults to None.
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
-        size (list, optional): Target size for image resizing. Defaults to [224, 224].
-        fits_extension (int, str, list, optional): The FITS extension(s) to use. Can be:
-                                               - An integer index
-                                               - A string extension name
-                                               - A list of integers or strings to combine multiple extensions
-                                               Uses the first extension (0) if None.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
         normalisation_method (NormalisationMethod, optional): Normalisation method to use.
                                                 Defaults to NormalisationMethod.CONVERSION_ONLY.
-        channel_combination (dict, optional): Dictionary defining how to combine FITS extensions into output channels.
-                                                Defaults to None.
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
         norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None.
         norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None.
@@ -397,12 +387,11 @@ def normalise_images(
         norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
         norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
         filepaths (list): List of image filepaths to load
-        size (tuple, optional): Size to resize images to (height, width)
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
 
     Returns:
-        list: List of images for successfully loaded images
+        list: List of images for successfully normalised images
     """
     # check if input is a single image array or a list of images
     if isinstance(images, np.ndarray) and images.ndim >= 2:
@@ -418,6 +407,7 @@ def normalise_images(
         images = [images]
 
     cfg = create_config(
+        output_dtype=output_dtype,
         normalisation_method=normalisation_method,
         num_workers=num_workers,
         norm_maximum_value=norm_maximum_value,

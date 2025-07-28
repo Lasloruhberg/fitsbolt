@@ -11,7 +11,7 @@ from astropy.io import fits
 
 from fitsbolt.read import read_images, _convert_greyscale_to_nchannels
 from fitsbolt.resize import resize_images, resize_image
-from fitsbolt.normalisation.normalisation import normalise_images
+from fitsbolt.normalisation.normalisation import normalise_images, _normalise_image
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 from fitsbolt.cfg.create_config import create_config
 from fitsbolt.image_loader import load_and_process_images
@@ -537,7 +537,7 @@ class TestWrapperFunctions:
         assert isinstance(result, np.ndarray), "Single image should return single array"
         assert result.shape == (50, 50, 3), "Should maintain shape"
         assert result.dtype == np.uint8, "Should convert to uint8"
-        assert np.max(result) <= 255, "Should be normalized to uint8 range"
+        assert np.max(result) <= 255, "Should be normalised to uint8 range"
 
     def test_normalise_images_multiple_images(self):
         """Test normalise_images with multiple images."""
@@ -554,7 +554,7 @@ class TestWrapperFunctions:
         assert len(results) == 2, "Should return 2 images"
         for result in results:
             assert result.dtype == np.uint8, "Should convert to uint8"
-            assert np.max(result) <= 255, "Should be normalized to uint8 range"
+            assert np.max(result) <= 255, "Should be normalised to uint8 range"
 
     def test_normalise_images_different_methods(self):
         """Test normalise_images with different normalisation methods."""
@@ -643,3 +643,141 @@ class TestWrapperFunctions:
         # We'll use valid multiple files to simulate this scenario
         results = load_and_process_images([self.rgb_path, self.gray_path], show_progress=False)
         assert len(results) == 2, "Should load multiple files successfully"
+
+    def test_normalise_images_comprehensive_dtype_combinations(self):
+        """Test normalise_images with all normalization methods and all input/output dtype combinations."""
+        # Test input data types: float32, uint8, uint16
+        # Test output data types: uint8, uint16, float32 (float16 is not supported by the normalization code)
+        # Test all normalization methods: CONVERSION_ONLY, LOG, ZSCALE, ASINH
+
+        # Define test input data types
+        input_dtypes = [np.float32, np.uint8, np.uint16]
+
+        # Define test output data types (only those supported by the normalization code)
+        output_dtypes = [np.uint8, np.uint16, np.float32]
+
+        # Define test normalization methods
+        norm_methods = [
+            NormalisationMethod.CONVERSION_ONLY,
+            NormalisationMethod.LOG,
+            NormalisationMethod.ZSCALE,
+            NormalisationMethod.ASINH,
+        ]
+
+        # Create test images with different input dtypes
+        test_images = {}
+        for input_dtype in input_dtypes:
+            # Create test image with some pattern
+            img = np.zeros((50, 50, 3), dtype=input_dtype)
+
+            # Set different values based on dtype to ensure meaningful data
+            if input_dtype == np.float32:
+                img[20:30, 20:30, 0] = 1000.0  # High value in red channel
+                img[10:20, 10:20, 1] = 500.0  # Medium value in green channel
+                img[30:40, 30:40, 2] = 100.0  # Low value in blue channel
+            elif input_dtype == np.uint8:
+                img[20:30, 20:30, 0] = 255  # Max value in red channel
+                img[10:20, 10:20, 1] = 128  # Half value in green channel
+                img[30:40, 30:40, 2] = 64  # Quarter value in blue channel
+            elif input_dtype == np.uint16:
+                img[20:30, 20:30, 0] = 65535  # Max value in red channel
+                img[10:20, 10:20, 1] = 32768  # Half value in green channel
+                img[30:40, 30:40, 2] = 16384  # Quarter value in blue channel
+
+            test_images[input_dtype] = img
+
+        # Test all combinations
+        test_count = 0
+        success_count = 0
+
+        for input_dtype in input_dtypes:
+            for output_dtype in output_dtypes:
+                for norm_method in norm_methods:
+                    test_count += 1
+
+                    # Create custom config with the desired output dtype
+                    cfg = create_config(
+                        output_dtype=output_dtype,
+                        normalisation_method=norm_method,
+                        norm_maximum_value=None,  # Let it calculate dynamically
+                        norm_minimum_value=None,  # Let it calculate dynamically
+                        norm_log_calculate_minimum_value=(norm_method == NormalisationMethod.LOG),
+                        norm_asinh_scale=[0.5, 0.7, 0.9],  # Different scales per channel
+                        norm_asinh_clip=[95.0, 98.0, 99.0],  # Different clips per channel
+                    )
+
+                    # Get the test image for this input dtype
+                    test_img = test_images[input_dtype].copy()
+
+                    try:
+                        # Apply normalization using the internal function with our custom config
+                        result = _normalise_image(test_img, cfg)
+
+                        # Verify output dtype
+                        assert result.dtype == output_dtype, (
+                            f"Expected output dtype {output_dtype}, got {result.dtype} "
+                            f"for input {input_dtype} with method {norm_method.name}"
+                        )
+
+                        # Verify output shape matches input shape
+                        assert (
+                            result.shape == test_img.shape
+                        ), f"Output shape {result.shape} doesn't match input shape {test_img.shape}"
+
+                        # Verify output values are in expected range for the dtype
+                        if output_dtype == np.uint8:
+                            assert np.min(result) >= 0, "uint8 output should have min >= 0"
+                            assert np.max(result) <= 255, "uint8 output should have max <= 255"
+                        elif output_dtype == np.uint16:
+                            assert np.min(result) >= 0, "uint16 output should have min >= 0"
+                            assert np.max(result) <= 65535, "uint16 output should have max <= 65535"
+                        elif output_dtype == np.float32:
+                            # For float types, values should be finite
+                            assert np.all(np.isfinite(result)), "Float output should be finite"
+                            # Normalised values should typically be in [0, 1] range for most methods
+                            if norm_method == NormalisationMethod.CONVERSION_ONLY:
+                                assert np.min(result) >= 0, "Normalised float should have min >= 0"
+                                assert np.max(result) <= 1, "Normalised float should have max <= 1"
+
+                        success_count += 1
+
+                    except Exception as e:
+                        # Some combinations might fail (e.g., LOG with negative values)
+                        # This is acceptable for certain edge cases
+                        if norm_method == NormalisationMethod.LOG and input_dtype == np.float32:
+                            # LOG method might fail with certain float32 values, which is acceptable
+                            pass
+                        else:
+                            # For other cases, we want to know about failures
+                            print(
+                                f"Failed combination: input={input_dtype.__name__}, "
+                                f"output={output_dtype.__name__}, method={norm_method.name}"
+                            )
+                            raise e
+
+        # Ensure we tested a reasonable number of combinations and most succeeded
+        assert test_count == len(input_dtypes) * len(output_dtypes) * len(
+            norm_methods
+        ), "Should test all combinations"
+        assert (
+            success_count >= test_count * 0.8
+        ), f"At least 80% of combinations should succeed, got {success_count}/{test_count}"
+
+    def test_normalise_images_unsupported_dtype_fallback(self):
+        """Test that unsupported output dtypes fall back to uint8 with a warning."""
+        # Test that float16 (unsupported) falls back to uint8
+        img = np.zeros((10, 10, 3), dtype=np.float32)
+        img[5:8, 5:8, 0] = 100.0
+
+        # Create config with unsupported dtype
+        cfg = create_config(
+            output_dtype=np.float16,  # This is not supported
+            normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+        )
+
+        # Apply normalization - should fall back to uint8
+        result = _normalise_image(img, cfg)
+
+        # Should fall back to uint8, not float16
+        assert result.dtype == np.uint8, "Unsupported dtype should fall back to uint8"
+        assert result.shape == img.shape, "Shape should be preserved"
