@@ -505,6 +505,9 @@ def _read_image(filepath, cfg):
         assert (
             image.ndim >= 2 and image.ndim <= 3
         ), f"Image {filepath} has less than 2 or more than 3 dimensions: {image.shape}"
+    # make sure image is in H,W,C
+    if image.shape[0] == cfg.n_output_channels and image.shape[-1] != cfg.n_output_channels:
+        image = np.transpose(image, (1, 2, 0))
 
     # check if there is a greyscale image or an RGBA image that needs to be converted to RGB
     image = _convert_greyscale_to_nchannels(
