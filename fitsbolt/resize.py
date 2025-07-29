@@ -14,6 +14,7 @@ def resize_images(
     output_dtype=np.uint8,
     size=None,
     interpolation_order=1,
+    num_workers=4,
     desc="Resizing images",
     show_progress=True,
 ):
@@ -33,6 +34,7 @@ def resize_images(
         output_dtype=output_dtype,
         size=size,
         interpolation_order=interpolation_order,
+        num_workers=num_workers,
     )
 
     # initialise logger

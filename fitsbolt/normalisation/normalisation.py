@@ -378,7 +378,7 @@ def normalise_images(
     norm_crop_for_maximum_value=None,
     norm_asinh_scale=[0.7, 0.7, 0.7],
     norm_asinh_clip=[99.8, 99.8, 99.8],
-    desc="Loading images",
+    desc="Normalising images",
     show_progress=True,
 ):
     """Load and process multiple images in parallel.

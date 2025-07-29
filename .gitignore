@@ -76,6 +76,9 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+# Custom notebooks for testing
+examples/*.ipynb
+examples/multi_extension_tutorial.ipynb
 
 # IPython
 profile_default/

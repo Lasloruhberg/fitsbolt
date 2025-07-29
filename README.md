@@ -1,6 +1,6 @@
 # fitsbolt
 
-A versatile Python package for loading and normalizing astronomical images across multiple formats (FITS, JPEG, PNG, TIFF). The package provides a uniform interface for image processing, particularly optimized for astronomical data with high dynamic range.
+A versatile Python package for loading and normalising astronomical images across multiple formats (FITS, JPEG, PNG, TIFF). The package provides a uniform interface for image processing, particularly optimized for astronomical data with high dynamic range.
 
 ## Installation
 
@@ -40,9 +40,7 @@ raw_images = fitsbolt.read_images(
 # Step 2: Normalise images  
 normalised_images = fitsbolt.normalise_images(
     images=raw_images,
-    normalisation_method=fitsbolt.NormalisationMethod.ASINH,
-    norm_asinh_scale=[0.7, 0.7, 0.7],
-    norm_asinh_clip=[99.8, 99.8, 99.8],
+    normalisation_method=fitsbolt.NormalisationMethod.LOG,
     show_progress=True
 )
 
@@ -75,7 +73,7 @@ filepaths = ["image1.fits", "image2.fits", "image3.jpg"]
 results = load_and_process_images(
     filepaths=filepaths,
     size=[224, 224],                                    # Target size for resizing
-    normalisation_method=NormalisationMethod.ASINH,     # Normalization method
+    normalisation_method=NormalisationMethod.ASINH,     # Normalisation method
     fits_extension=0,                                   # FITS extension to use
     num_workers=4,                                      # Parallel processing
     show_progress=True                                  # Show progress bar
@@ -135,17 +133,17 @@ Reads image files and returns raw image arrays.
 images = fitsbolt.read_images(
     filepaths=["img1.fits", "img2.jpg"],
     fits_extension=0,           # FITS extension to use
-    channel_combination=None,   # Custom channel mapping
+    n_output_channels=3,       # greyscale image mapped to 3 channels, jpg read normally
     num_workers=4,             # Parallel processing
     show_progress=True         # Progress bar
 )
 ```
 
 #### `fitsbolt.normalise_images()`
-Normalizes image arrays using various astronomical-optimized methods.
+Normalises image arrays using various astronomical-optimized methods.
 
 ```python
-normalized = fitsbolt.normalise_images(
+normalised = fitsbolt.normalise_images(
     images=raw_images,
     normalisation_method=fitsbolt.NormalisationMethod.ASINH,
     norm_asinh_scale=[0.7, 0.7, 0.7],
@@ -160,7 +158,7 @@ Resizes image arrays to specified dimensions.
 
 ```python
 resized = fitsbolt.resize_images(
-    images=normalized_images,
+    images=normalised_images,
     size=[224, 224],           # Target size [height, width]
     interpolation_order=1,     # 0-5, higher = smoother
     output_dtype=np.uint8,     # Output data type
@@ -224,7 +222,7 @@ When loading multiple FITS extensions, this parameter controls how they are comb
 - **Explicit mapping**: A numpy array of shape `(n_output_channels, len(fits_extension))` 
   - Each row represents an output channel
   - Each column represents a weight for the corresponding FITS extension
-  - Weights are normalized to sum to 1 for each output channel
+  - Weights are normalised to sum to 1 for each output channel
   
 **Example**: If you have 3 FITS extensions and want a custom RGB mapping:
 ```python
@@ -303,9 +301,9 @@ result = fitsbolt.load_and_process_images(
 )
 ```
 
-### Normalization Methods
+### Normalisation Methods
 
-fitsbolt provides several normalization methods for handling astronomical images with high dynamic range:
+fitsbolt provides several normalisation methods for handling astronomical images with high dynamic range:
 
 1. **CONVERSION_ONLY**:
    - If input dtype already matches the requested output dtype: No conversion applied
@@ -348,11 +346,58 @@ fitsbolt provides several normalization methods for handling astronomical images
 - **n_output_channels**: Number of channels in the output image (default: 3 for RGB)
 - **channel_combination**: Array defining how to combine FITS extensions into output channels
 
-#### Normalization Parameters
-- **normalisation_method**: Method to use for normalization (CONVERSION_ONLY, LOG, ZSCALE, ASINH)
-- **norm_maximum_value**: Maximum value for normalization (overrides auto-detection)
-- **norm_minimum_value**: Minimum value for normalization (overrides auto-detection)
+#### Normalisation Parameters
+- **normalisation_method**: Method to use for normalisation (CONVERSION_ONLY, LOG, ZSCALE, ASINH)
+- **norm_maximum_value**: Maximum value for normalisation (overrides auto-detection)
+- **norm_minimum_value**: Minimum value for normalisation (overrides auto-detection)
 - **norm_crop_for_maximum_value**: Tuple (height, width) to crop around center for max value calculation
 - **norm_log_calculate_minimum_value**: Whether to calculate minimum for log scaling (default: False)
-- **norm_asinh_scale**: Channel-wise stretch factors for asinh normalization (default: [0.7, 0.7, 0.7])
-- **norm_asinh_clip**: Channel-wise percentile clipping for asinh normalization (default: [99.8, 99.8, 99.8])
+- **norm_asinh_scale**: Channel-wise stretch factors for asinh normalisation (default: [0.7, 0.7, 0.7])
+- **norm_asinh_clip**: Channel-wise percentile clipping for asinh normalisation (default: [99.8, 99.8, 99.8])
+
+
+# Image Normalisation
+Normalisation is applied during image loading. This allows to retain high dynamic range information from images and work with uint8s internally. This is especially recommended to apply when working with fits files or other high dynamic range inputs.
+
+For the available classes see [NormalisationMethod](NormalisationMethod.py) and their respective implementation in [normalise()](normalisation.py)
+
+Currently (V1.1.0), when evaluating all files the top files are saved ino a numpy array with the selected normalisation.
+When loading those top files with the "Load Top Files" button, they will be displayed with the normalisation applied during evaluation.
+
+Conversion only: Behaviour depends on the image dtype
+    uint8: No scaling
+    uint16: rescaling to uint8 by dividing /256
+    float32: rescaling to uint8 by a linear min/max stretch
+
+Log: Applies a logstretch to an interval of
+    minimum: minimum of array, 0 if negative
+    maximum: maximum of array
+
+ZScale:
+    Applies a linear stretch between a minimum and maximum derived
+    from a zscale.
+
+When evaluating all files, the top files are saved as a NumPy array using the selected normalisation.
+When loading these top files with the "Load Top Files" button, they are displayed with the same normalisation applied during evaluation.
+
+## Normalisation Methods
+### Conversion_Only:
+"No" normalisation applied
+ - Behaviour depends on the image data type and output data type:
+    - uint8: No scaling is applied.
+    - uint16: Rescaled to uint8 by dividing by 256 and rounding.
+    - float32 & other: Rescaled to uint8 using a linear min/max stretch or normalised to [0,1]
+
+### Log:
+Applies a logarithmic stretch.
+- Minimum: The minimum value of the array (or 0 if negative).
+- Maximum: The maximum value of the array.
+
+### ZScale:
+Applies a linear stretch.
+ - The minimum and maximum are determined using the zscale algorithm.
+
+### Asinh
+Applies an asinh stretch 
+ - First: clipping based on the set min/max, then clipping symmetrically by percentile each channel and then dividing with the asinh_scale cfg parameter, and normalising
+ - Minimum and Maximum are determined based on the config parameters described
