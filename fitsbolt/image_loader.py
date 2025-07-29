@@ -75,7 +75,7 @@ def load_and_process_images(
         this will first read the image, then normalise it and finally resize it.
 
     Args:
-        filepaths (list): filepath or list of image filepaths to load
+        filepaths (list): filepath or list of image filepaths to load, or list of lists for multi-FITS mode
         cfg (DotMap, optional): Configuration settings. Defaults to None.
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
         size (list, optional): Target size for image resizing. Defaults to [224, 224].
@@ -83,6 +83,7 @@ def load_and_process_images(
                                                - An integer index
                                                - A string extension name
                                                - A list of integers or strings to combine multiple extensions
+                                               - For multi-FITS mode: list of extensions matching filepaths structure
                                                Uses the first extension (0) if None.
         interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
         normalisation_method (NormalisationMethod, optional): Normalisation method to use.
@@ -105,6 +106,14 @@ def load_and_process_images(
 
     Returns:
         list: List of images for successfully loaded and processed images
+
+    Examples:
+        # Single FITS file with multiple extensions
+        images = load_and_process_images(["image.fits"], fits_extension=[0, 1, 2])
+
+        # Multiple FITS files with corresponding extensions (new functionality)
+        images = load_and_process_images([["file1.fits", "file2.fits", "file3.fits"]],
+                                       fits_extension=[0, 1, 2])
     """
     # check if input is a single filepath or a list
     if not isinstance(filepaths, (list, np.ndarray)):
@@ -112,6 +121,15 @@ def load_and_process_images(
         filepaths = [filepaths]
     else:
         return_single = False
+
+    # Check for multi-FITS mode (nested lists)
+    if filepaths and isinstance(filepaths[0], list):
+        # Multi-FITS mode: each element is a list of FITS files
+        logger.debug("Multi-FITS mode detected: combining multiple FITS files per image")
+        if not isinstance(fits_extension, list):
+            raise ValueError(
+                "Multi-FITS mode requires fits_extension to be a list matching the number of files"
+            )
 
     if cfg is None:
         cfg = create_config(

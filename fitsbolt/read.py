@@ -24,14 +24,13 @@ def read_images(
     """Load and process multiple images in parallel.
 
     Args:
-        filepaths (list): filepath or list of image filepaths to load
+        filepaths (list): filepath or list of image filepaths to load, or list of lists for multi-FITS mode
         fits_extension (int, str, list, optional): The FITS extension(s) to use. Can be:
                                                - An integer index
                                                - A string extension name
                                                - A list of integers or strings to combine multiple extensions
+                                               - For multi-FITS mode: list of extensions matching filepaths structure
                                                Uses the first extension (0) if None.
-        normalisation_method (NormalisationMethod, optional): Normalisation method to use.
-                                                Defaults to NormalisationMethod.CONVERSION_ONLY.
         n_output_channels (int, optional): Number of output channels for the image. Defaults to 3.
         channel_combination (dict, optional): Dictionary defining how to combine FITS extensions into output channels.
                                                 Defaults to None, which will try 1:1 or 1:n:output mapping for FITS
@@ -43,6 +42,14 @@ def read_images(
 
     Returns:
         list: image or list of images for successfully read images
+
+    Examples:
+        # Single FITS file with multiple extensions
+        images = read_images(["image.fits"], fits_extension=[0, 1, 2])
+
+        # Multiple FITS files with corresponding extensions (new functionality)
+        images = read_images([["file1.fits", "file2.fits", "file3.fits"]],
+                           fits_extension=[0, 1, 2])
     """
 
     # check if input is a single filepath or a list
@@ -51,6 +58,20 @@ def read_images(
         filepaths = [filepaths]
     else:
         return_single = False
+
+    # Check for multi-FITS mode (nested lists)
+    if filepaths and isinstance(filepaths[0], list):
+        # Multi-FITS mode: each element is a list of FITS files
+        logger.debug("Multi-FITS mode detected: combining multiple FITS files per image")
+        if not isinstance(fits_extension, list):
+            raise ValueError(
+                "Multi-FITS mode requires fits_extension to be a list matching the number of files"
+            )
+        if not len(fits_extension) == len(filepaths[0]):
+            raise ValueError("Multi-FITS mode requires fits_extension to match the number of files")
+        multi_fits_mode = True
+    else:
+        multi_fits_mode = False
 
     # create internal configuration object
     cfg = create_config(
@@ -77,17 +98,32 @@ def read_images(
     logger.debug(
         f"Loading {len(filepaths)} images in parallel with normalisation: {cfg.normalisation_method}"
     )
+    if multi_fits_mode:
 
-    def read_single_image(filepath):
-        try:
-            image = _read_image(
-                filepath,
-                cfg,
-            )
-            return image
-        except Exception as e:
-            logger.error(f"Error loading {filepath}: {str(e)}")
-            return None
+        def read_single_image(filepaths):
+            try:
+                image = _read_multi_fits_image(
+                    filepaths,
+                    fits_extension,
+                    cfg,
+                )
+                return image
+            except Exception as e:
+                logger.error(f"Error loading {filepaths}: {str(e)}")
+                return None
+
+    else:
+
+        def read_single_image(filepath):
+            try:
+                image = _read_image(
+                    filepath,
+                    cfg,
+                )
+                return image
+            except Exception as e:
+                logger.error(f"Error loading {filepath}: {str(e)}")
+                return None
 
     # Use ThreadPoolExecutor for parallel loading
     with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
@@ -121,18 +157,148 @@ def read_images(
     return results
 
 
+def _read_multi_fits_image(filepaths, fits_extensions, cfg):
+    """
+    Read and combine multiple FITS files with corresponding extensions.
+
+    Args:
+        filepaths (list): List of FITS file paths
+        fits_extensions (list): List of extensions corresponding to each file
+        cfg: internal configuration object
+
+    Returns:
+        numpy.ndarray: Combined image array
+    """
+    # Validate input lengths match
+    assert len(filepaths) == len(fits_extensions), (
+        f"Number of FITS files ({len(filepaths)}) must match number of extensions "
+        f"({len(fits_extensions)}). Files: {filepaths}, Extensions: {fits_extensions}"
+    )
+
+    # Read each FITS file with its corresponding extension
+    extension_images = []
+    extension_shapes = []
+    extension_names = []
+
+    for filepath, extension in zip(filepaths, fits_extensions):
+        # Validate file is a FITS file
+        file_ext = os.path.splitext(filepath.lower())[1]
+        assert file_ext == ".fits", (
+            f"All files must be FITS files when using multi-file mode. "
+            f"Got {file_ext} for file {filepath}"
+        )
+
+        logger.trace(f"Reading FITS file {filepath} with extension {extension}")
+
+        with fits.open(filepath) as hdul:
+            # Handle extension access
+            if isinstance(extension, (int, np.integer)):
+                extension_idx = int(extension)
+                if extension_idx < 0 or extension_idx >= len(hdul):
+                    logger.error(
+                        f"Invalid FITS extension index {extension_idx} for file {filepath} "
+                        f"with {len(hdul)} extensions"
+                    )
+                    raise IndexError(
+                        f"FITS extension index {extension_idx} is out of bounds (0-{len(hdul) - 1})"
+                    )
+                ext_data = hdul[extension_idx].data
+                extension_names.append(f"{filepath}[{extension_idx}]")
+            else:
+                # Try as string extension name
+                try:
+                    ext_data = hdul[extension].data
+                    extension_names.append(f"{filepath}['{extension}']")
+                except KeyError:
+                    available_ext = [ext.name for ext in hdul if hasattr(ext, "name")]
+                    logger.error(
+                        f"FITS extension name '{extension}' not found in file {filepath}. "
+                        f"Available extensions: {available_ext}"
+                    )
+                    raise KeyError(f"FITS extension name '{extension}' not found")
+
+            # Check for None data
+            if ext_data is None:
+                logger.error(f"FITS extension {extension} in file {filepath} has no data")
+                raise ValueError(f"FITS extension {extension} in file {filepath} has no data")
+
+            # Handle dimension issues
+            if ext_data.ndim > 2:
+                logger.warning(
+                    f"FITS extension {extension} in file {filepath} has more than 2 dimensions. "
+                    f"Setting to empty image"
+                )
+                # use dim 1 as in both H,W,C or C,H,W this will work for square images
+                ext_data = np.zeros((ext_data.shape[1], ext_data.shape[1]), dtype=ext_data.dtype)
+
+            extension_images.append(ext_data)
+            extension_shapes.append(ext_data.shape)
+
+    # Validate all shapes match
+    if len(set(str(shape) for shape in extension_shapes)) > 1:
+        shape_info = [f"{name}: {shape}" for name, shape in zip(extension_names, extension_shapes)]
+        error_msg = (
+            f"Cannot combine FITS files with different shapes. "
+            f"Extension shapes: {', '.join(shape_info)}"
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Combine the images into n_output channels
+    original_dtype = extension_images[0].dtype if extension_images else None
+    if cfg.channel_combination is not None:
+        image = _apply_channel_combination(
+            extension_images,
+            cfg.channel_combination,
+            original_dtype,
+            cfg.force_dtype,
+        )
+    else:
+        # Stack the extensions along a new dimension
+        image = np.stack(extension_images)
+
+    # For 2D images (now 3D after stacking), treat extensions as channels (RGB)
+    if len(extension_shapes[0]) == 2:
+        # Only use up to 3 extensions for RGB (more will be handled later by truncation)
+        if len(image) > 3:
+            import warnings
+
+            warnings.warn(
+                "More than 3 FITS files provided. " "Only the first 3 will be used as RGB channels."
+            )
+            logger.warning(
+                "More than 3 FITS files provided. " "Only the first 3 will be used as RGB channels."
+            )
+        # Transpose to get (Height, Width, Extensions) which is compatible with RGB format
+        image = np.transpose(image, (1, 2, 0))
+
+    return image
+
+
 def _read_image(filepath, cfg):
     """
     Read image data from a file without processing.
 
     Args:
-        filepath (str): Path to the image file
+        filepath (str or list): Path to the image file, or list of FITS file paths for multi-file mode
         cfg: internal configuration object
 
     Returns:
         numpy.ndarray: Raw image array
     """
     fits_extension = cfg.fits_extension
+
+    # Handle multi-file FITS input
+    if isinstance(filepath, list):
+        # Multi-file mode: filepath is a list of FITS files, fits_extension should be a list too
+        if not isinstance(fits_extension, list):
+            raise ValueError(
+                f"When providing multiple FITS files, fits_extension must be a list. "
+                f"Got {type(fits_extension)}: {fits_extension}"
+            )
+        return _read_multi_fits_image(filepath, fits_extension, cfg)
+
+    # Single file mode (original functionality)
     # Get file extension
     file_ext = os.path.splitext(filepath.lower())[1]
 

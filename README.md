@@ -246,6 +246,63 @@ results = load_and_process_images(
 )
 ```
 
+### Multi-FITS File Handling (New Feature)
+
+fitsbolt now supports combining multiple FITS files into a single image, where each file corresponds to a specific channel. This is useful when you have separate FITS files for different filters or observations that need to be combined.
+
+#### Basic Multi-FITS Usage
+
+```python
+# Combine three separate FITS files into RGB channels
+# Each file will be read with its corresponding extension
+files_for_rgb = ["red_filter.fits", "green_filter.fits", "blue_filter.fits"]
+extensions = [0, 0, 0]  # Use extension 0 from each file
+
+# Multi-FITS mode: pass a list of lists
+result = fitsbolt.load_and_process_images(
+    filepaths=[files_for_rgb],  # List of lists!
+    fits_extension=extensions,   # Must be a list matching file count
+    n_output_channels=3,
+    size=[224, 224]
+)
+
+# Or for multiple sets of multi-FITS files
+multiple_sets = [
+    ["set1_red.fits", "set1_green.fits", "set1_blue.fits"],
+    ["set2_red.fits", "set2_green.fits", "set2_blue.fits"]
+]
+results = fitsbolt.load_and_process_images(
+    filepaths=multiple_sets,
+    fits_extension=[0, 0, 0],
+    n_output_channels=3
+)
+```
+
+#### Multi-FITS Requirements
+
+- **File count must match extension count**: Each FITS file must have a corresponding extension specified
+- **All files must be FITS format**: Mixed file types are not supported in multi-FITS mode
+- **Consistent dimensions**: All FITS files must have the same spatial dimensions
+- **Extension list required**: `fits_extension` must be a list when using multi-FITS mode
+
+#### Multi-FITS vs Single-File Multi-Extension
+
+```python
+# Single FITS file with multiple extensions (existing functionality)
+result = fitsbolt.load_and_process_images(
+    filepaths=["multi_ext.fits"],     # Single file
+    fits_extension=[0, 1, 2],         # Multiple extensions from same file
+    n_output_channels=3
+)
+
+# Multiple FITS files with single extensions each (new functionality)
+result = fitsbolt.load_and_process_images(
+    filepaths=[["file1.fits", "file2.fits", "file3.fits"]],  # Multiple files
+    fits_extension=[0, 1, 2],         # One extension per file
+    n_output_channels=3
+)
+```
+
 ### Normalization Methods
 
 fitsbolt provides several normalization methods for handling astronomical images with high dynamic range:
