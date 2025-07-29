@@ -642,7 +642,9 @@ class TestImageIO:
             test_config.fits_extension = [0, 1]
             test_config.n_output_channels = 3  # Explicitly set output channels to 3
             # Create channel_combination matrix for 2 channels to 3 output channels
-            channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
+            channel_comb = np.zeros(
+                (3, 2), dtype=np.float32
+            )  # 3 output channels x 2 input extensions
             channel_comb[0, 0] = 1  # Map first extension to R
             channel_comb[1, 1] = 1  # Map second extension to G
             channel_comb[2, 0] = (
@@ -681,6 +683,9 @@ class TestImageIO:
             channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
             channel_comb[0, 0] = 1  # Map PRIMARY to R
             channel_comb[1, 1] = 1  # Map RED to G
+            channel_comb[2, 0] = (
+                0.5  # Map first extension to B with half intensity (so there is no 0 sum)
+            )
             test_config.channel_combination = channel_comb
 
             img_named = _read_image(temp_fits_path, test_config)
@@ -697,6 +702,9 @@ class TestImageIO:
             channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
             channel_comb[0, 0] = 1  # Map first extension to R
             channel_comb[1, 1] = 1  # Map second extension to G
+            channel_comb[2, 0] = (
+                0.5  # Map first extension to B with half intensity (so there is no 0 sum)
+            )
             test_config.channel_combination = channel_comb
 
             with pytest.raises(IndexError, match="out of bounds"):
@@ -709,6 +717,9 @@ class TestImageIO:
             channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
             channel_comb[0, 0] = 1  # Map first extension to R
             channel_comb[1, 1] = 1  # Map second extension to G
+            channel_comb[2, 0] = (
+                0.5  # Map first extension to B with half intensity (so there is no 0 sum)
+            )
             test_config.channel_combination = channel_comb
 
             with pytest.raises(KeyError, match="not found"):

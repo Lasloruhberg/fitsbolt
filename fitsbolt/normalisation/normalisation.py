@@ -84,7 +84,7 @@ def _compute_max_value(data, cfg=None):
         max_value = (
             cfg.normalisation.maximum_value
             if cfg.normalisation.maximum_value is not None
-            else np.max(data)
+            else np.nanmax(data)
         )
 
     return max_value
@@ -101,7 +101,7 @@ def _compute_min_value(data, cfg):
     min_value = (
         cfg.normalisation.minimum_value
         if cfg.normalisation.minimum_value is not None
-        else np.min(data)
+        else np.nanmin(data)
     )
 
     return min_value
@@ -187,6 +187,14 @@ def _conversiononly_normalisation(data, cfg):
     """
     # If input dtype already matches the requested output dtype and it's float32,
     # we still need to ensure it's normalized to [0,1] range
+    # For any other case, use normalised conversion (e.g. for input floats)
+
+    # get min or max from config if available
+    maximum = _compute_max_value(data, cfg)
+    minimum = _compute_min_value(data, cfg)
+    # clip to cover edge cases
+    data = np.clip(data, minimum, maximum)
+
     if data.dtype == cfg.output_dtype:
         if np.issubdtype(cfg.output_dtype, np.floating):
             # For float output, ensure data is in [0,1] range later on
@@ -202,7 +210,11 @@ def _conversiononly_normalisation(data, cfg):
             # Direct conversion from uint16 to uint8 with proper scaling
             return _type_conversion(data / 65535.0, cfg)  # 65535 = 2^16 - 1
         # if not matching dtype scale to [0,1] and convert
-        return _type_conversion((data - np.min(data)) / (np.max(data) - np.min(data)), cfg)
+        if maximum > minimum:
+            data = (data - minimum) / (maximum - minimum)
+        else:
+            data = data - minimum  # should return 0
+        return _type_conversion(data, cfg)
 
     elif cfg.output_dtype == np.uint16:
         if data.dtype == np.uint8:
@@ -217,11 +229,6 @@ def _conversiononly_normalisation(data, cfg):
         elif data.dtype == np.uint16:
             # Convert uint16 directly to float32 [0,1] range
             return _type_conversion(data / 65535.0, cfg)
-
-    # For any other case, use normalised conversion (e.g. for input floats)
-    # get min or max from config if available
-    maximum = _compute_max_value(data, cfg)
-    minimum = _compute_min_value(data, cfg)
 
     # ensure valid range
     if maximum > minimum:
@@ -333,6 +340,9 @@ def _normalise_image(data, cfg):
     Returns:
         numpy array: A normalised image based on the selected method
     """
+
+    # carefully replace nans with 0
+    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
 
     method = cfg.normalisation_method
     # Method selection
