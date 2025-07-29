@@ -85,7 +85,7 @@ for i, img in enumerate(results):
 ```
 
 ### Advanced Usage Examples
-
+See the example [Notebook](examples/multi_extension_tutorial.ipynb)
 #### Processing Single Images
 
 ```python
