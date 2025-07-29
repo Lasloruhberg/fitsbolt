@@ -1,3 +1,4 @@
+import numbers
 import numpy as np
 from dotmap import DotMap
 from loguru import logger
@@ -312,6 +313,10 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
 
         elif dtype == type:
             if not (isinstance(value, type) or isinstance(value, np.dtype)):
+                raise ValueError(
+                    f"{param_name} must be a (numpy) dtype, got {type(value).__name__}{_format_constraints()}"
+                )
+            if not issubclass(value, numbers.Number):
                 raise ValueError(
                     f"{param_name} must be a (numpy) dtype, got {type(value).__name__}{_format_constraints()}"
                 )

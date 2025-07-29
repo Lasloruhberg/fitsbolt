@@ -106,6 +106,9 @@ def resize_image(image, output_dtype=np.uint8, size=None, interpolation_order=1)
 
 def _resize_image(image, cfg):
     # Simple resize that maintains uint8 type if requested
+    if image.size == 0:
+        logger.warning("Received an empty image, returning as is.")
+        return image
     if cfg.size is not None and image.shape[:2] != tuple(cfg.size):
         image = resize(
             image,

@@ -505,7 +505,7 @@ def _read_image(filepath, cfg):
         assert (
             image.ndim >= 2 and image.ndim <= 3
         ), f"Image {filepath} has less than 2 or more than 3 dimensions: {image.shape}"
-    # make sure image is in H,W,C
+    # make sure image is in H,W,C and not C,H,W format
     if image.shape[0] == cfg.n_output_channels and image.shape[-1] != cfg.n_output_channels:
         image = np.transpose(image, (1, 2, 0))
 
@@ -541,14 +541,20 @@ def _apply_channel_combination(
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype. Defaults to True.
 
     Returns:
-        numpy.ndarray: Combined image (H, W, n_output_channels).
+        numpy.ndarray: Combined image (n_output_channels,H, W).
     """
     weights = channel_combination  # Shape: (n_output_channels, n_fits_extensions)
 
-    # Normalize weights
-    weights /= np.sum(weights, axis=1, keepdims=True)
-    # Perform dot product along channel dimension: output shape (H, W, n_output_channels)
-    result = np.tensordot(weights, extension_images, axes=1)
+    # Normalize weights to avoid division by zero
+    row_sums = np.sum(weights, axis=1, keepdims=True)
+    # Replace zero sums with 1 to avoid division by zero
+    row_sums[row_sums == 0] = 1
+    weights = weights / row_sums
+
+    # Perform dot product along channel dimension
+    result = np.tensordot(
+        weights, extension_images, axes=1
+    )  # n_ouput,n_input x (n_input, H, W) -> (n_output, H, W) ?
 
     # Force dtype if requested and original dtype is provided
     if force_dtype and original_dtype is not None and result.dtype != original_dtype:
@@ -564,7 +570,6 @@ def _apply_channel_combination(
             result = result.astype(original_dtype)
         else:
             result = result.astype(original_dtype)
-
     return result
 
 
@@ -578,11 +583,10 @@ def _convert_greyscale_to_nchannels(image, n_output_channels):
     Returns:
         numpy.ndarray: Image with the specified number of channels (H,W,n_output_channels)
     """
-
     # Handle grayscale images
     if len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
         if n_output_channels != 1:
-            image = np.stack((image,) * n_output_channels, axis=-1)
+            image = np.stack((np.squeeze(image),) * n_output_channels, axis=-1)
         else:
             # always return a 2D image if n_output_channels is 1
             image = image[:, :, 0] if len(image.shape) == 3 else image
