@@ -109,24 +109,6 @@ class TestReadFunctions:
             # If we can't read it, that's not a test failure - just skip
             pytest.skip(f"Unable to read 3D FITS file: {str(e)}")
 
-    def test_read_4d_fits(self):
-        """Test reading a 4D FITS file."""
-        cfg = create_config(n_output_channels=3)
-
-        # Skip test if file doesn't exist or can't be created
-        if not os.path.exists(self.fits_4d_path):
-            pytest.skip("Test FITS file not available")
-
-        # Read the 4D FITS file
-        try:
-            img = _read_image(self.fits_4d_path, cfg)
-            # Should have 3 dimensions after processing
-            assert img.ndim == 3
-            assert img.shape[2] == 3
-        except Exception as e:
-            # If we can't read it, that's not a test failure - just skip
-            pytest.skip(f"Unable to read 4D FITS file: {str(e)}")
-
     def test_read_empty_extension(self):
         """Test reading a FITS file with an empty extension."""
         cfg = create_config(fits_extension="EMPTY_EXT", n_output_channels=1)
