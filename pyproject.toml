@@ -7,14 +7,15 @@ name = "fitsbolt"
 version = "0.1.0"
 description = "Python module to load and process astronomical images"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "GPL-3.0-or-later"
+license_files = ["LICEN[CS]E*"]
 authors = [{ name = "Laslo E. Ruhberg"}]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: GPL-3.0-only",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
