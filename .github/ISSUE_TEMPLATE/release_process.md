@@ -20,6 +20,7 @@ assignees: ''
 - [ ] Test that you can locally `pip install -e .` the module
 - [ ] Run Upload Python Package to testpypi workflow on release branch
 - [ ] Check it was successful and try to install it in a blank conda env for sanity
+`pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple fitsbolt`
 - [ ] Request and run PR Review once successful 
 - [ ] Merge `release` into `main`
 - [ ] Create Release on GitHub from the last commit (the one reviewed in the PR) reviewed
