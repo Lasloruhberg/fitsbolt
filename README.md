@@ -18,6 +18,8 @@ conda activate fb
 
 ## Quick Start
 
+Also see the interactive [example Notebook](examples/multi_extension_tutorial.ipynb)
+
 ### Using Individual Processing Functions
 
 fitsbolt now provides individual functions for each processing step, allowing you to have more granular control over your image processing pipeline:
@@ -27,12 +29,13 @@ import fitsbolt
 import numpy as np
 
 # List of image paths
-filepaths = ["image1.fits", "image2.fits", "image3.jpg"]
+filepaths = ["image1.fits", "image2.fits"] # could be jpg,tiff,png
 
 # Step 1: Read images
 raw_images = fitsbolt.read_images(
     filepaths=filepaths,
     fits_extension=0,
+    n_output_channels =3, # RGB, H,W,C format
     num_workers=4,
     show_progress=True
 )
@@ -58,9 +61,9 @@ for i, img in enumerate(final_images):
     print(f"Image {i}: shape={img.shape}, dtype={img.dtype}")
 ```
 
-### Using the Complete Pipeline (Original Method)
+### Using the Complete Pipeline
 
-For convenience, you can still use the original all-in-one function:
+For convenience, images can be read and processed by just one function call:
 
 ```python
 from fitsbolt import load_and_process_images, NormalisationMethod
@@ -74,7 +77,8 @@ results = load_and_process_images(
     filepaths=filepaths,
     size=[224, 224],                                    # Target size for resizing
     normalisation_method=NormalisationMethod.ASINH,     # Normalisation method
-    fits_extension=0,                                   # FITS extension to use
+    fits_extension=['PRIMARY'],                                   # FITS extension to use
+    n_output_channels=3, # will map the primary extension into a grey RGB image
     num_workers=4,                                      # Parallel processing
     show_progress=True                                  # Show progress bar
 )
@@ -85,7 +89,7 @@ for i, img in enumerate(results):
 ```
 
 ### Advanced Usage Examples
-See the example [Notebook](examples/multi_extension_tutorial.ipynb)
+See the example [Notebook](examples/multi_extension_tutorial.ipynb) for examples on any fits import.
 #### Processing Single Images
 
 ```python
@@ -244,9 +248,9 @@ results = load_and_process_images(
 )
 ```
 
-### Multi-FITS File Handling (New Feature)
+### Multi-FITS File Handling
 
-fitsbolt now supports combining multiple FITS files into a single image, where each file corresponds to a specific channel. This is useful when you have separate FITS files for different filters or observations that need to be combined.
+fitsbolt supports combining multiple FITS files into a single image, where each file corresponds to a specific channel. This is useful when you have separate FITS files for different filters or observations that need to be combined.
 
 #### Basic Multi-FITS Usage
 
@@ -327,11 +331,9 @@ fitsbolt provides several normalisation methods for handling astronomical images
 
 4. **ASINH**:
    - Applies an inverse hyperbolic sine (arcsinh) stretch
-   - Handles high dynamic range data especially well
    - Parameters:
-     - First clips based on min/max values
-     - Then applies channel-wise percentile clipping (controlled by asinh_clip)
-     - Stretching intensity controlled by asinh_scale (lower values = more linear behavior, higher values = more logarithmic)
+      - First: clipping based on the set min/max, then clipping symmetrically by percentile each channel and then dividing with the asinh_scale cfg parameter, and normalising
+      - Minimum and Maximum are computed or based on the norm_minimum/maximum_value parameters if set
 
 ### Configuration Parameters
 
@@ -355,49 +357,3 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **norm_asinh_scale**: Channel-wise stretch factors for asinh normalisation (default: [0.7, 0.7, 0.7])
 - **norm_asinh_clip**: Channel-wise percentile clipping for asinh normalisation (default: [99.8, 99.8, 99.8])
 
-
-# Image Normalisation
-Normalisation is applied during image loading. This allows to retain high dynamic range information from images and work with uint8s internally. This is especially recommended to apply when working with fits files or other high dynamic range inputs.
-
-For the available classes see [NormalisationMethod](NormalisationMethod.py) and their respective implementation in [normalise()](normalisation.py)
-
-Currently (V1.1.0), when evaluating all files the top files are saved ino a numpy array with the selected normalisation.
-When loading those top files with the "Load Top Files" button, they will be displayed with the normalisation applied during evaluation.
-
-Conversion only: Behaviour depends on the image dtype
-    uint8: No scaling
-    uint16: rescaling to uint8 by dividing /256
-    float32: rescaling to uint8 by a linear min/max stretch
-
-Log: Applies a logstretch to an interval of
-    minimum: minimum of array, 0 if negative
-    maximum: maximum of array
-
-ZScale:
-    Applies a linear stretch between a minimum and maximum derived
-    from a zscale.
-
-When evaluating all files, the top files are saved as a NumPy array using the selected normalisation.
-When loading these top files with the "Load Top Files" button, they are displayed with the same normalisation applied during evaluation.
-
-## Normalisation Methods
-### Conversion_Only:
-"No" normalisation applied
- - Behaviour depends on the image data type and output data type:
-    - uint8: No scaling is applied.
-    - uint16: Rescaled to uint8 by dividing by 256 and rounding.
-    - float32 & other: Rescaled to uint8 using a linear min/max stretch or normalised to [0,1]
-
-### Log:
-Applies a logarithmic stretch.
-- Minimum: The minimum value of the array (or 0 if negative).
-- Maximum: The maximum value of the array.
-
-### ZScale:
-Applies a linear stretch.
- - The minimum and maximum are determined using the zscale algorithm.
-
-### Asinh
-Applies an asinh stretch 
- - First: clipping based on the set min/max, then clipping symmetrically by percentile each channel and then dividing with the asinh_scale cfg parameter, and normalising
- - Minimum and Maximum are determined based on the config parameters described
