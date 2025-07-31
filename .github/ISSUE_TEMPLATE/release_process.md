@@ -13,7 +13,7 @@ assignees: ''
 - [ ] Create a new branch from `main` called `release` (e.g. `release-0.1.0`)
 - [ ] Write changelog into `CHANGELOG.md`
 - [ ] Minimize and update packages in `pyproject.toml` based on `environment.yml`
-- [ ] Check unit tests -> Check all tests pass on CPU and GPU (e.g. in Datalabs) and that there are tests for all important features
+- [ ] Check unit tests -> Check all tests pass and that there are tests for all important features
 - [ ] Check documentation -> Check presence of documentation for all new or changed user-facing features in README.md
 - [ ] Change version number in `pyproject.toml` and __init__.py
 - [ ] Create PR: `release` → `main`
