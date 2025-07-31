@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Python module to load and process astronomical images"
 readme = "README.md"
 license = "GPL-3.0-or-later"
-license_files = ["LICEN[CS]E*"]
+license-files = ["LICEN[CS]E*"]
 authors = [{ name = "Laslo E. Ruhberg"}]
 classifiers = [
     "Development Status :: 4 - Beta",
