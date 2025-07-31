@@ -1,3 +1,6 @@
+fitsbolt - A Python package for image loading and processing
+Copyright (C) <2025>  <Ruhberg>
+
 # fitsbolt
 
 A versatile Python package for loading and normalising astronomical images across multiple formats (FITS, JPEG, PNG, TIFF). The package provides a uniform interface for image processing, particularly optimized for astronomical data with high dynamic range.
