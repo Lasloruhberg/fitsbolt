@@ -1,4 +1,12 @@
-# Feature
+---
+name: Release procedure
+about: Make a new release
+title: ''
+labels: ''
+assignees: ''
+
+---
+# Release
  
 ## What Needs to Be Done (chronologically)
 
