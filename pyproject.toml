@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitsbolt"
-version = "0.1.0"
+version = "0.1.0.dev"
 description = "Python module to load and process astronomical images"
 readme = "README.md"
 license = "GPL-3.0-or-later"
