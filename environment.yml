@@ -4,8 +4,8 @@ channels:
   - defaults
 dependencies:
   - python>=3.8
-  - numpy
-  - astropy
+  - numpy>=2.0
+  - astropy>=6.0
   - scipy
   - scikit-image
   - tqdm

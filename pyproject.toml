@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fitsbolt"
 version = "0.1.0"
-description = "Python module to load astronomical images"
+description = "Python module to load and process astronomical images"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "GPL-3.0-or-later"
+license-files = ["LICEN[CS]E*"]
 authors = [{ name = "Laslo E. Ruhberg"}]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GPL-3.0-only",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering",
@@ -20,11 +20,14 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "astropy",
+    "astropy>=6.0",
     "loguru",
-    "numpy",
+    "numpy>=2.0",
     "scikit-image",
     "tqdm",
+    "pillow",
+    "dotmap",
+    "scipy",
 ]
 
 [project.optional-dependencies]
