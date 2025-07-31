@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitsbolt"
-version = "0.1.0.dev2"
+version = "0.1.0.dev3"
 description = "Python module to load and process astronomical images"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -22,7 +22,7 @@ requires-python = ">=3.11"
 dependencies = [
     "astropy>=6.0",
     "loguru",
-    "numpy>=1.9",
+    "numpy>=2.0",
     "scikit-image",
     "tqdm",
     "pillow",
