@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fitsbolt"
 version = "0.1.0"
-description = "Python module to load astronomical images"
+description = "Python module to load and process astronomical images"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Laslo E. Ruhberg"}]
