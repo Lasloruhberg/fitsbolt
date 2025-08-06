@@ -202,7 +202,7 @@ class TestImageIO:
 
     def test_supported_extensions(self):
         """Test that SUPPORTED_IMAGE_EXTENSIONS contains expected formats."""
-        expected_extensions = {".fits", ".jpg", ".jpeg", ".png", ".tiff"}
+        expected_extensions = {".fits", ".jpg", ".jpeg", ".png", ".tiff", ".tif"}
         assert SUPPORTED_IMAGE_EXTENSIONS == expected_extensions
 
     def test_read_image_rgb(self, test_config):

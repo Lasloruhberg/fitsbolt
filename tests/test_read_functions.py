@@ -123,7 +123,7 @@ class TestReadFunctions:
             assert img.shape[2] == 3
         except Exception as e:
             # If we can't read it, that's not a test failure - just skip
-            pytest.skip(f"Unable to read 3D FITS file: {str(e)}")
+            pytest.skip(f"Unable to read 3D FITS file (Not supported yet): {str(e)}")
 
     def test_read_empty_extension(self):
         """Test reading a FITS file with an empty extension."""
@@ -158,7 +158,7 @@ class TestReadFunctions:
             assert img.ndim == 3
         except Exception as e:
             # If test setup failed, skip instead of failing
-            pytest.skip(f"Test setup failed: {str(e)}")
+            pytest.skip(f"3D fits extension test skipped (Not supported yet): {str(e)}")
 
     def test_apply_channel_combination_with_force_dtype(self):
         """Test _apply_channel_combination with force_dtype."""
@@ -318,9 +318,8 @@ class TestReadFunctions:
             read_images(["nonexistent_file.fits"], n_output_channels=3, show_progress=False)
 
         # Test with single file path (return_single=True)
-        result = read_images(self.fits_3d_path, n_output_channels=3, show_progress=False)
-        assert isinstance(result, np.ndarray)
-        assert result.shape == (50, 50, 3)
+        with pytest.raises(Exception, match="contains 3D data"):
+            read_images(self.fits_3d_path, n_output_channels=3, show_progress=False)
 
         # Test with multiple files where some are invalid - should raise an exception
         with pytest.raises(Exception):  # Should raise FileNotFoundError or similar

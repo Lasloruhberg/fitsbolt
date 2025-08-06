@@ -239,10 +239,11 @@ def _read_multi_fits_image(filepaths, fits_extensions, cfg):
             if ext_data.ndim > 2:
                 logger.warning(
                     f"FITS extension {extension} in file {filepath} has more than 2 dimensions. "
-                    f"Setting to empty image"
                 )
-                # use dim 1 as in both H,W,C or C,H,W this will work for square images
-                ext_data = np.zeros((ext_data.shape[1], ext_data.shape[1]), dtype=ext_data.dtype)
+                raise ValueError(
+                    f"FITS extension {extension} in file {filepath} has more than 2 dimensions. "
+                    "Not supported"
+                )
 
             extension_images.append(ext_data)
             extension_shapes.append(ext_data.shape)
@@ -341,10 +342,14 @@ def _read_image(filepath, cfg):
                     if image.ndim == 3:
                         logger.warning(
                             f"FITS extension 0 in file {filepath} contains 3D data (shape: {image.shape}). "
-                            f"Single extension should be 2D. Replacing with black image."
+                            f"Single extension should be 2D."
                         )
                         # Create a 2D black image with the spatial dimensions of the original
-                        image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
+                        raise ValueError(
+                            f"FITS extension 0 in file {filepath} contains 3D data (shape: {image.shape}). "
+                            f"Single extension should be 2D. Not supported"
+                        )
+
                 elif isinstance(fits_extension, list):
                     # Handle list of extensions - need to load and combine them
                     extension_images = []
@@ -391,11 +396,12 @@ def _read_image(filepath, cfg):
                         if ext_data.ndim > 2:
                             logger.warning(
                                 f"FITS extension {ext} in file {filepath} has more than 2 dimensions. "
-                                f"Setting to empty image"
+                                "Not supported"
                             )
                             # use dim 1 as in both H,W,C or C,H,W this will work for square images
-                            ext_data = np.zeros(
-                                (ext_data.shape[1], ext_data.shape[1]), dtype=ext_data.dtype
+                            raise ValueError(
+                                f"FITS extension {ext} in file {filepath} has more than 2 dimensions. "
+                                "Not supported"
                             )
                         extension_images.append(ext_data)
                         extension_shapes.append(ext_data.shape)
@@ -461,10 +467,12 @@ def _read_image(filepath, cfg):
                     if image.ndim == 3:
                         logger.warning(
                             f"FITS extension {extension_idx} in file {filepath} contains 3D data (shape: {image.shape}). "
-                            f"Single extension should be 2D. Replacing with black image."
+                            f"Single extension should be 2D. Not supported"
                         )
-                        # Create a 2D black image with the spatial dimensions of the original
-                        image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
+                        raise ValueError(
+                            f"FITS extension {extension_idx} in file {filepath} contains 3D data (shape: {image.shape}). "
+                            f"Single extension should be 2D. Not supported"
+                        )
                 else:
                     # Try as string extension name
                     try:
@@ -474,10 +482,13 @@ def _read_image(filepath, cfg):
                         if image.ndim == 3:
                             logger.warning(
                                 f"FITS extension '{fits_extension}' in file {filepath} contains 3D data "
-                                f"(shape: {image.shape}). Single extension should be 2D. Replacing with black image."
+                                f"(shape: {image.shape}). Single extension should be 2D."
                             )
                             # Create a 2D black image with the spatial dimensions of the original
-                            image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
+                            raise ValueError(
+                                f"FITS extension '{fits_extension}' in file {filepath} contains 3D data "
+                                f"(shape: {image.shape}). Single extension should be 2D. Not supported"
+                            )
                     except KeyError:
                         available_ext = [ext.name for ext in hdul if hasattr(ext, "name")]
                         logger.error(
