@@ -21,7 +21,7 @@ from loguru import logger
 
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 
-SUPPORTED_IMAGE_EXTENSIONS = {".fits", ".jpg", ".jpeg", ".png", ".tiff"}
+SUPPORTED_IMAGE_EXTENSIONS = {".fits", ".jpg", ".jpeg", ".png", ".tiff", ".tif"}
 
 
 def create_config(
