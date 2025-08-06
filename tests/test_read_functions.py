@@ -309,25 +309,26 @@ class TestReadFunctions:
 
     def test_read_images_error_handling(self):
         """Test error handling in read_images function."""
-        # Test with invalid file path
-        result = read_images("nonexistent_file.fits", n_output_channels=3, show_progress=False)
-        assert result is None
+        # Test with invalid file path - should raise an exception
+        with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
+            read_images("nonexistent_file.fits", n_output_channels=3, show_progress=False)
 
-        # Test with list containing invalid file path
-        result = read_images(["nonexistent_file.fits"], n_output_channels=3, show_progress=False)
-        assert len(result) == 0
+        # Test with list containing invalid file path - should raise an exception
+        with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
+            read_images(["nonexistent_file.fits"], n_output_channels=3, show_progress=False)
 
         # Test with single file path (return_single=True)
         result = read_images(self.fits_3d_path, n_output_channels=3, show_progress=False)
         assert isinstance(result, np.ndarray)
         assert result.shape == (50, 50, 3)
 
-        # Test with multiple files where some are invalid
-        result = read_images(
-            [self.fits_3d_path, "nonexistent_file.fits"], n_output_channels=3, show_progress=False
-        )
-        assert len(result) == 1
-        assert isinstance(result[0], np.ndarray)
+        # Test with multiple files where some are invalid - should raise an exception
+        with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
+            read_images(
+                [self.fits_3d_path, "nonexistent_file.fits"],
+                n_output_channels=3,
+                show_progress=False,
+            )
 
         # Test with multi-FITS mode and invalid configuration
         with pytest.raises(ValueError, match="Multi-FITS mode requires fits_extension"):

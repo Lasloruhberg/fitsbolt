@@ -61,7 +61,7 @@ def resize_images(
         sys.stderr,
         colorize=True,
         level=cfg.log_level.upper(),
-        format="<green>{time:HH:mm:ss}</green>|astro-loader-<blue>{level}</blue>| <level>{message}</level>",
+        format="<green>{time:HH:mm:ss}</green>|fitsbolt-<blue>{level}</blue>| <level>{message}</level>",
     )
 
     logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
@@ -78,8 +78,8 @@ def resize_images(
             )
             return image
         except Exception as e:
-            logger.error(f"Error loading {image}: {str(e)}")
-            return None
+            logger.error(f"Error resizing {image}: {str(e)}")
+            raise e
 
     # Use ThreadPoolExecutor for parallel loading
     with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
@@ -93,9 +93,6 @@ def resize_images(
             )
         else:
             results = list(executor.map(resize_single_image, images))
-
-    # Filter out None results (failed loads)
-    results = [r for r in results if r is not None]
 
     logger.debug(f"Successfully loaded {len(results)} of {len(images)} images")
     return results
@@ -135,11 +132,17 @@ def _resize_image(image, cfg):
             order=cfg.interpolation_order if cfg.interpolation_order is not None else 1,
             preserve_range=True,
         )
+        # the resizing creates floats, so proper clipping and conversion is needed
         if cfg.output_dtype == np.uint8:
             image = np.clip(image, 0, np.iinfo(np.uint8).max).astype(np.uint8)
         elif cfg.output_dtype == np.uint16:
             image = np.clip(image, 0, np.iinfo(np.uint16).max).astype(np.uint16)
         elif image.dtype != cfg.output_dtype:
             image = image.astype(cfg.output_dtype)
-
+    if image is None:
+        logger.error("Failed to resize image")
+        raise ValueError("Image resizing failed. Check the file format and content.")
+    if isinstance(image, np.ndarray) and image.size == 0:
+        logger.warning("Received an empty image, returning as is.")
+        raise ValueError("Image resizing failed.")
     return image

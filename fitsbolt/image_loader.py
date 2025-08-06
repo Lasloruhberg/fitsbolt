@@ -174,7 +174,7 @@ def load_and_process_images(
         sys.stderr,
         colorize=True,
         level=cfg.log_level.upper(),
-        format="<green>{time:HH:mm:ss}</green>|astro-loader-<blue>{level}</blue>| <level>{message}</level>",
+        format="<green>{time:HH:mm:ss}</green>|fitsbolt-<blue>{level}</blue>| <level>{message}</level>",
     )
 
     logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
@@ -189,10 +189,15 @@ def load_and_process_images(
                 filepath,
                 cfg,
             )
+            if image is None:
+                logger.error(f"Failed to load image from {filepath}")
+                raise ValueError(
+                    f"Image loading failed for {filepath}. Check the file format and content."
+                )
             return image
         except Exception as e:
             logger.error(f"Error loading {filepath}: {str(e)}")
-            return None
+            raise e
 
     # Use ThreadPoolExecutor for parallel loading
     with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
@@ -206,9 +211,6 @@ def load_and_process_images(
             )
         else:
             results = list(executor.map(load_single_image, filepaths))
-
-    # Filter out None results (failed loads)
-    results = [r for r in results if r is not None]
 
     logger.debug(f"Successfully loaded {len(results)} of {len(filepaths)} images")
     if return_single:

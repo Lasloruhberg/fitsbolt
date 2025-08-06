@@ -19,6 +19,7 @@ Tests for the wrapper functions (read_images, resize_images, normalise_images).
 
 import os
 import numpy as np
+import pytest
 import shutil
 import tempfile
 from PIL import Image
@@ -67,13 +68,10 @@ class TestWrapperFunctionEdgeCases:
             print(f"Warning: Could not delete test directory: {e}")
 
     def test_read_images_single_file_failure_returns_proper_none(self):
-        """Test read_images single file failure returns None or empty result properly."""
-        # Test with invalid file path - should handle gracefully
-        result = read_images("/totally/nonexistent/file.jpg", show_progress=False)
-        # The function should handle this gracefully and return appropriate result
-        assert result is None or (
-            isinstance(result, list) and len(result) == 0
-        ), "Should handle single invalid file"
+        """Test read_images single file failure raises proper exception."""
+        # Test with invalid file path - should raise an exception instead of handling gracefully
+        with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
+            read_images("/totally/nonexistent/file.jpg", show_progress=False)
 
     def test_read_images_warning_multiple_loaded_single_requested(self):
         """Test the specific warning case in read_images where multiple images are loaded but single was requested."""
@@ -438,19 +436,16 @@ class TestWrapperFunctions:
     def test_read_images_error_handling(self):
         """Test read_images with invalid file paths."""
         invalid_paths = ["/nonexistent/file.jpg", self.rgb_path]
-        results = read_images(invalid_paths, show_progress=False)
 
-        # Should only return results for valid files
-        assert len(results) == 1, "Should return only valid image"
-        assert isinstance(results[0], np.ndarray), "Valid result should be array"
+        # Should raise an exception when encountering invalid file paths
+        with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
+            read_images(invalid_paths, show_progress=False)
 
     def test_read_images_single_file_error_handling(self):
         """Test read_images error handling with single invalid file."""
-        # Test with single invalid file
-        results = read_images("/nonexistent/file.jpg", show_progress=False)
-        assert results is None or (
-            isinstance(results, list) and len(results) == 0
-        ), "Should handle single file error gracefully"
+        # Test with single invalid file - should raise an exception
+        with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
+            read_images("/nonexistent/file.jpg", show_progress=False)
 
     def test_read_images_channel_combination(self):
         """Test read_images with channel combination for FITS files."""
@@ -644,13 +639,11 @@ class TestWrapperFunctions:
 
     def test_load_and_process_images_multiple_files_some_fail(self):
         """Test load_and_process_images when some files fail to load."""
-        # Mix valid and invalid paths
+        # Mix valid and invalid paths - should raise an exception when encountering invalid files
         mixed_paths = [self.rgb_path, "/nonexistent1.jpg", self.gray_path, "/nonexistent2.jpg"]
-        results = load_and_process_images(mixed_paths, show_progress=False)
 
-        assert len(results) == 2, "Should return only successfully loaded images"
-        for result in results:
-            assert isinstance(result, np.ndarray), "Each result should be an array"
+        with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
+            load_and_process_images(mixed_paths, show_progress=False)
 
     def test_load_and_process_images_warning_single_request_multiple_results(self):
         """Test warning when single file requested but multiple results returned."""

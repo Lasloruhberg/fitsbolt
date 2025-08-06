@@ -376,13 +376,9 @@ class TestImageIO:
         """Test load_and_process_images with invalid file paths."""
         invalid_paths = ["/nonexistent/file.jpg", self.rgb_path]
 
-        results = load_and_process_images(invalid_paths, cfg=test_config, show_progress=False)
-
-        # Should only return results for valid files
-        assert len(results) == 1
-        # The one valid result should be an image array
-        assert isinstance(results[0], np.ndarray)
-        assert results[0].shape[2] == 3  # Should be RGB
+        # Should raise an exception when encountering invalid file paths
+        with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
+            load_and_process_images(invalid_paths, cfg=test_config, show_progress=False)
 
     def test_rgba_to_rgb_conversion_values(self, test_config):
         """Test that RGBA to RGB conversion handles alpha channel correctly."""
@@ -997,3 +993,52 @@ class TestImageIO:
                     os.remove(temp_fits_path)
                 except (OSError, PermissionError):
                     pass
+
+    def test_empty_files(self, test_config):
+        """Test that empty files raise appropriate errors for both _read_image and load_and_process_images."""
+        empty_files = []
+
+        try:
+            # Create empty PNG file
+            empty_png = os.path.join(self.test_dir, "empty.png")
+            open(empty_png, "w").close()  # Create empty file
+            empty_files.append(empty_png)
+
+            # Create empty JPG file
+            empty_jpg = os.path.join(self.test_dir, "empty.jpg")
+            open(empty_jpg, "w").close()  # Create empty file
+            empty_files.append(empty_jpg)
+
+            # Create empty TIFF file
+            empty_tiff = os.path.join(self.test_dir, "empty.tiff")
+            open(empty_tiff, "w").close()  # Create empty file
+            empty_files.append(empty_tiff)
+
+            # Create empty FITS file
+            empty_fits = os.path.join(self.test_dir, "empty.fits")
+            open(empty_fits, "w").close()  # Create empty file
+            empty_files.append(empty_fits)
+
+            # Test _read_image with each empty file format
+            for empty_file in empty_files:
+                with pytest.raises(Exception, match=".*"):  # Should raise some kind of exception
+                    _read_image(empty_file, test_config)
+
+            # Test load_and_process_images with empty files
+            # Should handle errors gracefully and return empty results or raise exception
+            for empty_file in empty_files:
+                with pytest.raises(Exception):  # Should raise an exception
+                    load_and_process_images([empty_file], cfg=test_config, show_progress=False)
+
+            # Test load_and_process_images with list of empty files
+            with pytest.raises(Exception):  # Should raise an exception
+                load_and_process_images(empty_files, cfg=test_config, show_progress=False)
+
+        finally:
+            # Clean up empty test files
+            for empty_file in empty_files:
+                if os.path.exists(empty_file):
+                    try:
+                        os.remove(empty_file)
+                    except (OSError, PermissionError):
+                        pass

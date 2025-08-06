@@ -106,7 +106,7 @@ def read_images(
         sys.stderr,
         colorize=True,
         level=cfg.log_level.upper(),
-        format="<green>{time:HH:mm:ss}</green>|astro-loader-<blue>{level}</blue>| <level>{message}</level>",
+        format="<green>{time:HH:mm:ss}</green>|fitsbolt-<blue>{level}</blue>| <level>{message}</level>",
     )
 
     logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
@@ -126,7 +126,7 @@ def read_images(
                 return image
             except Exception as e:
                 logger.error(f"Error loading {filepaths}: {str(e)}")
-                return None
+                raise e
 
     else:
 
@@ -139,7 +139,7 @@ def read_images(
                 return image
             except Exception as e:
                 logger.error(f"Error loading {filepath}: {str(e)}")
-                return None
+                raise e
 
     # Use ThreadPoolExecutor for parallel loading
     with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
@@ -154,9 +154,6 @@ def read_images(
         else:
             results = list(executor.map(read_single_image, filepaths))
 
-    # Filter out None results (failed loads)
-    results = [r for r in results if r is not None]
-
     logger.debug(f"Successfully loaded {len(results)} of {len(filepaths)} images")
     if return_single:
         # If only one image was requested, return it directly
@@ -169,7 +166,7 @@ def read_images(
             return results[0]
         else:
             logger.error("No images were successfully loaded")
-            return None
+            raise ValueError("No images were successfully loaded")
     return results
 
 
@@ -287,7 +284,13 @@ def _read_multi_fits_image(filepaths, fits_extensions, cfg):
             )
         # Transpose to get (Height, Width, Extensions) which is compatible with RGB format
         image = np.transpose(image, (1, 2, 0))
-
+    if image is None:
+        logger.error(f"Failed to read image from {filepath}")
+        raise ValueError(f"Image reading failed for {filepath}. Check the file format and content.")
+    elif isinstance(image, np.ndarray):
+        if image.size == 0:
+            logger.error(f"Image from {filepath} is empty (size 0)")
+            raise ValueError(f"Image from {filepath} is empty (size 0)")
     return image
 
 
@@ -521,6 +524,10 @@ def _read_image(filepath, cfg):
         assert (
             image.ndim >= 2 and image.ndim <= 3
         ), f"Image {filepath} has less than 2 or more than 3 dimensions: {image.shape}"
+
+        # raise an error if the image is empty or not loaded correctly
+        assert image.size > 0, f"Image {filepath} is empty or not loaded correctly"
+
     # make sure image is in H,W,C and not C,H,W format
     if image.shape[0] == cfg.n_output_channels and image.shape[-1] != cfg.n_output_channels:
         image = np.transpose(image, (1, 2, 0))
@@ -542,6 +549,13 @@ def _read_image(filepath, cfg):
         ), f"After reading, image has unexpected shape: {image.shape} - {filepath}"
 
     # return H,W for single channel or H,W,C for multi-channel
+    if image is None:
+        logger.error(f"Failed to read image from {filepath}")
+        raise ValueError(f"Image reading failed for {filepath}. Check the file format and content.")
+    elif isinstance(image, np.ndarray):
+        if image.size == 0:
+            logger.error(f"Image from {filepath} is empty (size 0)")
+            raise ValueError(f"Image from {filepath} is empty (size 0)")
     return image
 
 
