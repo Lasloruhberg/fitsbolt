@@ -53,11 +53,8 @@ def resize_images(
         num_workers=num_workers,
     )
 
-    # initialise logger
-    logger.remove()
-
     # Add a new logger configuration for console output
-    logger.add(
+    logger_id = logger.add(
         sys.stderr,
         colorize=True,
         level=cfg.log_level.upper(),
@@ -95,6 +92,7 @@ def resize_images(
             results = list(executor.map(resize_single_image, images))
 
     logger.debug(f"Successfully loaded {len(results)} of {len(images)} images")
+    logger.remove(logger_id)
     return results
 
 

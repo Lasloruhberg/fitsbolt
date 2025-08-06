@@ -98,11 +98,8 @@ def read_images(
         force_dtype=force_dtype,
     )
 
-    # initialise logger
-    logger.remove()
-
     # Add a new logger configuration for console output
-    logger.add(
+    logger_id = logger.add(
         sys.stderr,
         colorize=True,
         level=cfg.log_level.upper(),
@@ -158,15 +155,18 @@ def read_images(
     if return_single:
         # If only one image was requested, return it directly
         if len(results) == 1:
+            logger.remove(logger_id)
             return results[0]
         elif len(results) > 1:
             logger.warning(
                 "Multiple images loaded but only one was requested. Returning the first image."
             )
+            logger.remove(logger_id)
             return results[0]
         else:
             logger.error("No images were successfully loaded")
             raise ValueError("No images were successfully loaded")
+    logger.remove(logger_id)
     return results
 
 

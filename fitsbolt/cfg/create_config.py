@@ -37,9 +37,9 @@ def create_config(
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
     norm_crop_for_maximum_value=None,
-    norm_asinh_scale=[0.7, 0.7, 0.7],
-    norm_asinh_clip=[99.8, 99.8, 99.8],
-    log_level="INFO",
+    norm_asinh_scale=[0.7],
+    norm_asinh_clip=[99.8],
+    log_level="SUCCESS",
     force_dtype=True,
 ):
     """Create a configuration object for loading and processing astronomical data.
@@ -62,8 +62,10 @@ def create_config(
         norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
                             Defaults to False.
         norm_crop_for_maximum_value (type, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
+        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                            should have the length of n_output_channels or 1. Defaults to [0.7].
+        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                            should have the length of n_output_channels or 1. Defaults to [99.8].
         log_level (str, optional): Logging level. Defaults to "INFO".
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
                             like channel combination. Defaults to True.
@@ -174,7 +176,7 @@ def _return_required_and_optional_keys():
             None,
             None,
             False,
-            ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "TRACE"],
+            ["DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL", "TRACE"],
         ],
         # Required special parameters
         "size": ["special_size", None, None, False, None],
@@ -265,7 +267,8 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     f"Missing required parameter: {param_name}"
                     + f"(type: {dtype.__name__ if hasattr(dtype, '__name__') else dtype})"
                 )
-
+        # get value n_output_channels
+        n_output_channels = cfg.n_output_channels if "n_output_channels" in cfg else 3
         # Skip validation for None values on optional parameters
         if value is None and optional:
             continue
@@ -359,12 +362,13 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
         elif dtype == "special_asinh_scale":
             if not isinstance(value, (list, tuple, int, float)):
                 raise ValueError(
-                    f"{param_name} must be a number or list/tuple of 3 numbers > 0, got {type(value).__name__}"
+                    f"{param_name} must be a number or list/tuple of {n_output_channels} or 1 numbers > 0,"
+                    + f" got {type(value).__name__}"
                 )
             if isinstance(value, (list, tuple)):
-                if len(value) != 3:
+                if len(value) != n_output_channels and len(value) != 1:
                     raise ValueError(
-                        f"{param_name} if list/tuple, must have length 3, got length {len(value)}"
+                        f"{param_name} if list/tuple, must have length {n_output_channels} or 1, got length {len(value)}"
                     )
                 if not all(isinstance(x, (int, float)) for x in value):
                     raise ValueError(
@@ -384,12 +388,13 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
         elif dtype == "special_asinh_clip":
             if not isinstance(value, (list, tuple, int, float)):
                 raise ValueError(
-                    f"{param_name} must be a number or list/tuple of 3 numbers in ]0,100.], got {type(value).__name__}"
+                    f"{param_name} must be a number or list/tuple of n_output_channels numbers in ]0,100.],"
+                    + f" got {type(value).__name__}"
                 )
             if isinstance(value, (list, tuple)):
-                if len(value) != 3:
+                if len(value) != n_output_channels and len(value) != 1:
                     raise ValueError(
-                        f"{param_name} if list/tuple, must have length 3, got length {len(value)}"
+                        f"{param_name} if list/tuple, must have length {n_output_channels} or 1, got length {len(value)}"
                     )
                 if not all(isinstance(x, (int, float)) for x in value):
                     raise ValueError(

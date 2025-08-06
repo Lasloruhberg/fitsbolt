@@ -271,7 +271,8 @@ def _expand(value, length: int) -> np.ndarray:
         # input parameter mismatch
         if arr.size != 1:
             logger.warning(
-                f"Parameter asinh_scale or asinh_clip: {value!r} has length {arr.size}, expected {length}."
+                f"Parameter norm_asinh_scale or norm_asinh_clip: {value!r} has length {arr.size}, expected {length}."
+                + " Will use first element"
             )
         try:
             arr = np.full(length, arr[0], dtype=np.float32)
@@ -393,8 +394,8 @@ def normalise_images(
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
     norm_crop_for_maximum_value=None,
-    norm_asinh_scale=[0.7, 0.7, 0.7],
-    norm_asinh_clip=[99.8, 99.8, 99.8],
+    norm_asinh_scale=[0.7],
+    norm_asinh_clip=[99.8],
     desc="Normalising images",
     show_progress=True,
 ):
@@ -411,8 +412,10 @@ def normalise_images(
         norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
                                                 (normally defaults to 0). Defaults to False.
         norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
+        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                            should have the length of n_channels or 1. Defaults to [0.7].
+        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                            should have the length of n_channels or 1. Defaults to [99.8].
         filepaths (list): List of image filepaths to load
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
@@ -444,11 +447,9 @@ def normalise_images(
         norm_asinh_scale=norm_asinh_scale,
         norm_asinh_clip=norm_asinh_clip,
     )
-    # initialise logger
-    logger.remove()
 
     # Add a new logger configuration for console output
-    logger.add(
+    logger_id = logger.add(
         sys.stderr,
         colorize=True,
         level=cfg.log_level.upper(),
@@ -492,10 +493,13 @@ def normalise_images(
     if return_single:
         # If only one image was requested, return it directly
         if len(results) == 1:
+            logger.remove(logger_id)
             return results[0]
         else:
             logger.warning(
                 "Multiple images loaded but only one was requested. Returning the first image."
             )
+            logger.remove(logger_id)
             return results[0]
+    logger.remove(logger_id)
     return results

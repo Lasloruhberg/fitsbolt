@@ -69,7 +69,6 @@ def _load_image(filepath, cfg):
 
 def load_and_process_images(
     filepaths,
-    cfg=None,
     output_dtype=np.uint8,
     size=[224, 224],
     fits_extension=None,
@@ -82,17 +81,17 @@ def load_and_process_images(
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
     norm_crop_for_maximum_value=None,
-    norm_asinh_scale=[0.7, 0.7, 0.7],
-    norm_asinh_clip=[99.8, 99.8, 99.8],
+    norm_asinh_scale=[0.7],
+    norm_asinh_clip=[99.8],
     desc="Loading images",
     show_progress=True,
+    cfg=None,
 ):
     """Load and process multiple images in parallel.
         this will first read the image, then normalise it and finally resize it.
 
     Args:
         filepaths (list): filepath or list of image filepaths to load, or list of lists for multi-FITS mode
-        cfg (DotMap, optional): Configuration settings. Defaults to None.
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
         size (list, optional): Target size for image resizing. Defaults to [224, 224].
         fits_extension (int, str, list, optional): The FITS extension(s) to use. Can be:
@@ -113,12 +112,14 @@ def load_and_process_images(
         norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
                                                 (normally defaults to 0). Defaults to False.
         norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
-        filepaths (list): List of image filepaths to load
-        size (tuple, optional): Size to resize images to (height, width)
+        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                            should have the length of n_channels or 1. Defaults to [0.7].
+        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                            should have the length of n_channels or 1. Defaults to [99.8].
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
+        cfg (DotMap, optional): Configuration settings. Defaults to None.
+
 
     Returns:
         list: List of images for successfully loaded and processed images
@@ -166,11 +167,9 @@ def load_and_process_images(
         )
     else:
         validate_config(cfg)
-    # initialise logger
-    logger.remove()
 
     # Add a new logger configuration for console output
-    logger.add(
+    logger_id = logger.add(
         sys.stderr,
         colorize=True,
         level=cfg.log_level.upper(),
@@ -216,10 +215,13 @@ def load_and_process_images(
     if return_single:
         # If only one image was requested, return it directly
         if len(results) == 1:
+            logger.remove(logger_id)
             return results[0]
         else:
             logger.warning(
                 "Multiple images loaded but only one was requested. Returning the first image."
             )
+            logger.remove(logger_id)
             return results[0]
+    logger.remove(logger_id)
     return results
