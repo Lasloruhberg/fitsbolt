@@ -255,6 +255,7 @@ def _conversiononly_normalisation(data, cfg):
         logger.warning(
             "Conversion normalisation: Image minimum value is larger than maximum, setting image to 0"
         )
+        # this is something that can happen with certain settings, so this should not raise an exception
         return np.zeros_like(data, dtype=cfg.output_dtype)
 
 
