@@ -169,6 +169,7 @@ def load_and_process_images(
         validate_config(cfg)
 
     # Add a new logger configuration for console output
+    logger.remove()
     logger_id = logger.add(
         sys.stderr,
         colorize=True,

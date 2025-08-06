@@ -16,6 +16,7 @@
 
 import numbers
 import numpy as np
+import warnings
 from dotmap import DotMap
 from loguru import logger
 
@@ -39,7 +40,7 @@ def create_config(
     norm_crop_for_maximum_value=None,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
-    log_level="SUCCESS",
+    log_level="INFO",
     force_dtype=True,
 ):
     """Create a configuration object for loading and processing astronomical data.
@@ -66,7 +67,7 @@ def create_config(
                                             should have the length of n_output_channels or 1. Defaults to [0.7].
         norm_asinh_clip (list, optional): Clip values for asinh normalisation,
                                             should have the length of n_output_channels or 1. Defaults to [99.8].
-        log_level (str, optional): Logging level. Defaults to "INFO".
+        log_level (str, optional): Logging level. Defaults to "SUCCESS".
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
                             like channel combination. Defaults to True.
 
@@ -486,6 +487,7 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
 
     if unexpected_keys:
         logger.warning(f"Found unexpected keys in config: {sorted(unexpected_keys)}")
+        warnings.warn(f"Found unexpected keys in config: {sorted(unexpected_keys)}")
         logger.info("Config: validation partially successful")
     else:
         logger.info("Config: validation successful")

@@ -19,6 +19,7 @@ import numpy as np
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
+import warnings
 
 from skimage.util import img_as_ubyte, img_as_uint, img_as_float32
 
@@ -45,7 +46,7 @@ def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
         return img_as_float32(data)
     else:
         # Default to uint8 if output_dtype is not specified or not supported
-        logger.warning(f"Unsupported output dtype: {cfg.output_dtype}, defaulting to uint8")
+        warnings.warn(f"Unsupported output dtype: {cfg.output_dtype}, defaulting to uint8")
         return img_as_ubyte(data)
 
 
@@ -69,7 +70,7 @@ def _crop_center(data: np.ndarray, crop_height: int, crop_width: int) -> np.ndar
     top = (h - crop_height) // 2
     left = (w - crop_width) // 2
     if top < 0 or left < 0:
-        logger.warning("Crop size is larger than image size, returning original image")
+        warnings.warn("Crop size is larger than image size, returning original image")
         return data
     return data[top : top + crop_height, left : left + crop_width]
 
@@ -152,9 +153,7 @@ def _log_normalisation(data, cfg):
     if minimum < maximum:
         norm = ImageNormalize(data, vmin=minimum, vmax=maximum, stretch=LogStretch(), clip=True)
     else:
-        logger.warning(
-            "Image minimum value is larger than maximum, ignoring boundaries and using a LinearInterval"
-        )
+        warnings.warn("Image maximum is not larger than minimum, using linear normalisation")
         norm = ImageNormalize(data, vmin=None, vmax=None, stretch=LogStretch(), clip=True)
     img_normalised = norm(data)  # range 0,1
     # Convert back to uint8 range
@@ -172,7 +171,7 @@ def _zscale_normalisation(data, cfg):
         numpy array: A normalised image in the specified output data type
     """
     if not np.any(data != data.flat[0]):  # Constant value check
-        logger.warning("Zscale normalisation: constant image detected, using fallback conversion.")
+        warnings.warn("Zscale normalisation: constant image detected, using fallback conversion.")
         return _conversiononly_normalisation(data, cfg)
 
     # Min Max value do not apply, also no constrain to center
@@ -182,7 +181,7 @@ def _zscale_normalisation(data, cfg):
         # Convert back to specified dtype
         return _type_conversion(img_normalised, cfg)
     else:
-        logger.warning(
+        warnings.warn(
             "Zscale normalisation: image maximum value not larger than minimum, only converting image"
         )
         return _conversiononly_normalisation(data, cfg)
@@ -252,9 +251,7 @@ def _conversiononly_normalisation(data, cfg):
         img_normalised = norm(data)  # range 0,1
         return _type_conversion(img_normalised, cfg)
     else:
-        logger.warning(
-            "Conversion normalisation: Image minimum value is larger than maximum, setting image to 0"
-        )
+        warnings.warn("Image maximum is not larger than minimum, returning zero array")
         # this is something that can happen with certain settings, so this should not raise an exception
         return np.zeros_like(data, dtype=cfg.output_dtype)
 
@@ -338,9 +335,9 @@ def _asinh_normalisation(data, cfg):
     if min_value < max_value:
         return _type_conversion((normalised - min_value) / (max_value - min_value), cfg)
     else:
-        logger.warning(
-            "Image maximum value is not larger than minimum, using minimal normalisation instead. Check settings"
-        )
+
+        warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
+
         return _conversiononly_normalisation(data, cfg=cfg)
 
 
@@ -449,6 +446,7 @@ def normalise_images(
     )
 
     # Add a new logger configuration for console output
+    logger.remove()
     logger_id = logger.add(
         sys.stderr,
         colorize=True,

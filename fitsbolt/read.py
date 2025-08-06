@@ -17,6 +17,7 @@
 import os
 import sys
 import numpy as np
+import warnings
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
@@ -99,6 +100,7 @@ def read_images(
     )
 
     # Add a new logger configuration for console output
+    logger.remove()
     logger_id = logger.add(
         sys.stderr,
         colorize=True,
@@ -437,18 +439,6 @@ def _read_image(filepath, cfg):
                     # If images are 3D (Height, Width, Channels), stack results in 4D (Ext, Height, Width, Channels)
                     # For 2D images (now 3D after stacking), treat extensions as channels (RGB)
                     if len(extension_shapes[0]) == 2:
-                        # Only use up to 3 extensions for RGB (more will be handled later by truncation)
-                        if len(image) > 3:
-                            import warnings
-
-                            warnings.warn(
-                                f"More than 3 extensions provided for file {filepath}. "
-                                f"Only the first 3 will be used as RGB channels."
-                            )
-                            logger.warning(
-                                f"More than 3 extensions provided for file {filepath}. "
-                                f"Only the first 3 will be used as RGB channels."
-                            )
                         # Transpose to get (Height, Width, Extensions) which is compatible with RGB format
                         image = np.transpose(image, (1, 2, 0))
                 elif isinstance(fits_extension, (int, np.integer)):
@@ -514,7 +504,7 @@ def _read_image(filepath, cfg):
 
             # Handle dimension issues in FITS data
             if image.ndim > 3:
-                logger.warning(
+                warnings.warn(
                     f"FITS image {filepath} has more than 3 dimensions. Taking the first 3 dimensions."
                 )
                 image = image[:3]

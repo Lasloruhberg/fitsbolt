@@ -52,8 +52,8 @@ def resize_images(
         interpolation_order=interpolation_order,
         num_workers=num_workers,
     )
-
     # Add a new logger configuration for console output
+    logger.remove()
     logger_id = logger.add(
         sys.stderr,
         colorize=True,
@@ -121,7 +121,7 @@ def _resize_image(image, cfg):
     # Simple resize that maintains uint8 type if requested
     if image.size == 0:
         logger.warning("Received an empty image, returning as is.")
-        return image
+        raise ValueError("Image is empty, cannot resize.")
     if cfg.size is not None and image.shape[:2] != tuple(cfg.size):
         image = resize(
             image,
