@@ -177,7 +177,14 @@ def _return_required_and_optional_keys():
             None,
             None,
             False,
-            ["DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL", "TRACE"],
+            [
+                "TRACE",
+                "DEBUG",
+                "INFO",
+                "WARNING",
+                "ERROR",
+                "CRITICAL",
+            ],
         ],
         # Required special parameters
         "size": ["special_size", None, None, False, None],
@@ -270,6 +277,9 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                 )
         # get value n_output_channels
         n_output_channels = cfg.n_output_channels if "n_output_channels" in cfg else 3
+        # get current log level
+        current_log_level = cfg.log_level if "log_level" in cfg else "WARNING"
+
         # Skip validation for None values on optional parameters
         if value is None and optional:
             continue
@@ -486,8 +496,9 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
     unexpected_keys = actual_keys - expected_keys
 
     if unexpected_keys:
-        logger.warning(f"Found unexpected keys in config: {sorted(unexpected_keys)}")
         warnings.warn(f"Found unexpected keys in config: {sorted(unexpected_keys)}")
-        logger.info("Config: validation partially successful")
+        if current_log_level in ["DEBUG", "INFO", "TRACE"]:
+            logger.info("Config: validation partially successful")
     else:
-        logger.info("Config: validation successful")
+        if current_log_level in ["DEBUG", "INFO", "TRACE"]:
+            logger.info("Config: validation successful")

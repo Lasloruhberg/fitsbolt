@@ -19,6 +19,22 @@ import logging
 from typing import Optional
 
 
+def _is_jupyter_notebook():
+    """Detect if code is running in a Jupyter notebook environment."""
+    try:
+        # Check for IPython kernel
+        from IPython import get_ipython
+
+        ipython = get_ipython()
+        if ipython is None:
+            return False
+
+        # Check if it's a notebook kernel (not terminal IPython)
+        return hasattr(ipython, "kernel")
+    except ImportError:
+        return False
+
+
 class FitsboltLogger:
     """Module-specific logger for fitsbolt with consistent formatting."""
 
@@ -88,10 +104,10 @@ class FitsboltLogger:
 
 
 class FitsboltFormatter(logging.Formatter):
-    """Custom formatter for fitsbolt logger with colors."""
+    """Custom formatter for fitsbolt logger with colors for both terminal and Jupyter."""
 
-    # ANSI color codes
-    COLORS = {
+    # ANSI color codes for terminal
+    ANSI_COLORS = {
         "DEBUG": "\033[36m",  # Cyan
         "INFO": "\033[32m",  # Green
         "WARNING": "\033[33m",  # Yellow
@@ -102,20 +118,71 @@ class FitsboltFormatter(logging.Formatter):
         "GREEN": "\033[32m",  # Green
     }
 
+    # HTML colors for Jupyter notebooks
+    HTML_COLORS = {
+        "DEBUG": "#17A2B8",  # Cyan
+        "INFO": "#28A745",  # Green
+        "WARNING": "#FFC107",  # Yellow
+        "ERROR": "#DC3545",  # Red
+        "CRITICAL": "#6F42C1",  # Purple
+        "BLUE": "#007BFF",  # Blue
+        "GREEN": "#28A745",  # Green
+        "TIME": "#28A745",  # Green for timestamp
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.is_jupyter = _is_jupyter_notebook()
+
     def format(self, record):
         # Format: time|fitsbolt-level| message
         time_str = self.formatTime(record, "%H:%M:%S")
         level_name = record.levelname
         message = record.getMessage()
 
+        if self.is_jupyter:
+            # Use HTML formatting for Jupyter notebooks
+            return self._format_html(time_str, level_name, message)
+        else:
+            # Use ANSI colors for terminal
+            return self._format_ansi(time_str, level_name, message)
+
+    def _format_html(self, time_str, level_name, message):
+        """Format log message with HTML for Jupyter notebooks."""
+        try:
+            from IPython.display import HTML, display
+
+            time_color = self.HTML_COLORS["TIME"]
+            level_color = self.HTML_COLORS["BLUE"]
+            message_color = self.HTML_COLORS.get(level_name, "#000000")
+
+            html_content = (
+                f'<span style="color: {time_color}; font-weight: bold;">{time_str}</span>'
+                f"|fitsbolt-"
+                f'<span style="color: {level_color}; font-weight: bold;">{level_name}</span>'
+                f"| "
+                f'<span style="color: {message_color};">{message}</span>'
+            )
+
+            # Display the HTML directly in Jupyter
+            display(HTML(html_content))
+
+            # Return plain text for logging system
+            return f"{time_str}|fitsbolt-{level_name}| {message}"
+        except ImportError:
+            # Fallback to plain text if IPython is not available
+            return f"{time_str}|fitsbolt-{level_name}| {message}"
+
+    def _format_ansi(self, time_str, level_name, message):
+        """Format log message with ANSI colors for terminal."""
         # Apply colors if stderr supports it
         if hasattr(sys.stderr, "isatty") and sys.stderr.isatty():
-            colored_time = f"{self.COLORS['GREEN']}{time_str}{self.COLORS['RESET']}"
-            colored_level = f"{self.COLORS['BLUE']}{level_name}{self.COLORS['RESET']}"
+            colored_time = f"{self.ANSI_COLORS['GREEN']}{time_str}{self.ANSI_COLORS['RESET']}"
+            colored_level = f"{self.ANSI_COLORS['BLUE']}{level_name}{self.ANSI_COLORS['RESET']}"
 
             # Color the message based on level
-            level_color = self.COLORS.get(level_name, "")
-            colored_message = f"{level_color}{message}{self.COLORS['RESET']}"
+            level_color = self.ANSI_COLORS.get(level_name, "")
+            colored_message = f"{level_color}{message}{self.ANSI_COLORS['RESET']}"
 
             return f"{colored_time}|fitsbolt-{colored_level}| {colored_message}"
         else:
