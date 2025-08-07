@@ -84,6 +84,7 @@ def load_and_process_images(
     norm_asinh_clip=[99.8],
     desc="Loading images",
     show_progress=True,
+    log_level="WARNING",
     cfg=None,
 ):
     """Load and process multiple images in parallel.
@@ -117,6 +118,8 @@ def load_and_process_images(
                                             should have the length of n_channels or 1. Defaults to [99.8].
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
+        log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
+                                   Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
         cfg (DotMap, optional): Configuration settings. Defaults to None.
 
 
@@ -163,6 +166,7 @@ def load_and_process_images(
             norm_crop_for_maximum_value=norm_crop_for_maximum_value,
             norm_asinh_scale=norm_asinh_scale,
             norm_asinh_clip=norm_asinh_clip,
+            log_level=log_level,
         )
     else:
         validate_config(cfg)

@@ -40,7 +40,7 @@ def create_config(
     norm_crop_for_maximum_value=None,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
-    log_level="INFO",
+    log_level="WARNING",
     force_dtype=True,
 ):
     """Create a configuration object for loading and processing astronomical data.

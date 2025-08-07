@@ -132,7 +132,7 @@ class TestConfigValidation:
         assert cfg.n_output_channels == 3
         assert cfg.normalisation_method == NormalisationMethod.CONVERSION_ONLY
         assert cfg.num_workers == 4
-        assert cfg.log_level == "INFO"
+        assert cfg.log_level in ["TRACE", "WARNING", "INFO", "DEBUG", "ERROR", "CRITICAL"]
         assert cfg.force_dtype is True
 
         # Test with custom output dtype

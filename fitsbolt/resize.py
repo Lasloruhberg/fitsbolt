@@ -31,15 +31,19 @@ def resize_images(
     num_workers=4,
     desc="Resizing images",
     show_progress=True,
+    log_level="WARNING",
 ):
     """
     Resize an image to the specified size using skimage's resize function.
 
     Args:
         images (list(numpy.ndarray)): List of image arrays to resize
+        output_dtype (type, optional): Desired output data type for the resized images.
+                                       Can be np.unit8, np.uint16 or np.float32. Defaults to np.uint8.
         size (tuple, optional): Target size for resizing (height, width). If None, no resizing is done.
         interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
-
+        log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
+                                   Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
     Returns:
         list(numpy.ndarray): List of resized image arrays
 
@@ -49,6 +53,7 @@ def resize_images(
         size=size,
         interpolation_order=interpolation_order,
         num_workers=num_workers,
+        log_level=log_level,
     )
     # Add a new logger configuration for console output
     logger.set_log_level(cfg.log_level)
@@ -87,15 +92,20 @@ def resize_images(
     return results
 
 
-def resize_image(image, output_dtype=np.uint8, size=None, interpolation_order=1):
+def resize_image(
+    image, output_dtype=np.uint8, size=None, interpolation_order=1, log_level="WARNING"
+):
     """
     Resize an image to the specified size using skimage's resize function.
 
     Args:
         image (numpy.ndarray): Image array to resize
+        output_dtype (type, optional): Desired output data type for the resized images.
+                                       Can be np.unit8, np.uint16 or np.float32. Defaults to np.uint8.
         size (tuple, optional): Target size for resizing (height, width). If None, no resizing is done.
         interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
-
+        log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
+                                   Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
     Returns:
         numpy.ndarray: Resized image array
     """
@@ -103,6 +113,7 @@ def resize_image(image, output_dtype=np.uint8, size=None, interpolation_order=1)
         output_dtype=output_dtype,
         size=size,
         interpolation_order=interpolation_order,
+        log_level=log_level,
     )
 
     return _resize_image(image, cfg)

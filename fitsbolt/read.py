@@ -36,6 +36,7 @@ def read_images(
     desc="Reading images",
     show_progress=True,
     force_dtype=True,
+    log_level="WARNING",
 ):
     """Load and process multiple images in parallel.
 
@@ -55,6 +56,8 @@ def read_images(
         show_progress (bool): Whether to show a progress bar
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
                                      like channel combination. Defaults to True.
+        log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
+                                   Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
 
     Returns:
         list: image or list of images for successfully read images
@@ -96,6 +99,7 @@ def read_images(
         channel_combination=channel_combination,
         num_workers=num_workers,
         force_dtype=force_dtype,
+        log_level=log_level,
     )
 
     # Add a new logger configuration for console output

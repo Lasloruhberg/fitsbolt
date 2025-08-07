@@ -394,6 +394,7 @@ def normalise_images(
     norm_asinh_clip=[99.8],
     desc="Normalising images",
     show_progress=True,
+    log_level="WARNING",
 ):
     """Load and process multiple images in parallel.
 
@@ -415,6 +416,8 @@ def normalise_images(
         filepaths (list): List of image filepaths to load
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
+        log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
+                                   Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
 
     Returns:
         list: List of images for successfully normalised images
@@ -442,6 +445,7 @@ def normalise_images(
         norm_crop_for_maximum_value=norm_crop_for_maximum_value,
         norm_asinh_scale=norm_asinh_scale,
         norm_asinh_clip=norm_asinh_clip,
+        log_level=log_level,
     )
 
     # Add a new logger configuration for console output
