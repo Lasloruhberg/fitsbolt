@@ -18,9 +18,9 @@ import numbers
 import numpy as np
 import warnings
 from dotmap import DotMap
-from loguru import logger
 
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
+from fitsbolt.cfg.logger import logger
 
 SUPPORTED_IMAGE_EXTENSIONS = {".fits", ".jpg", ".jpeg", ".png", ".tiff", ".tif"}
 

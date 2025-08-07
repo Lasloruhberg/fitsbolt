@@ -9,7 +9,7 @@ dependencies:
   - scipy
   - scikit-image
   - tqdm
-  - loguru
+  - logging
   - pytest
   - pillow
   - dotmap

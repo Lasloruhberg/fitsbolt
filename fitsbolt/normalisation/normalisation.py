@@ -14,9 +14,7 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import sys
 import numpy as np
-from loguru import logger
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 import warnings
@@ -34,6 +32,7 @@ from astropy.visualization import (
 
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 from fitsbolt.cfg.create_config import create_config
+from fitsbolt.cfg.logger import logger
 
 
 def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
@@ -446,13 +445,7 @@ def normalise_images(
     )
 
     # Add a new logger configuration for console output
-    logger.remove()
-    logger_id = logger.add(
-        sys.stderr,
-        colorize=True,
-        level=cfg.log_level.upper(),
-        format="<green>{time:HH:mm:ss}</green>|fitsbolt-<blue>{level}</blue>| <level>{message}</level>",
-    )
+    logger.set_log_level(cfg.log_level)
 
     logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
 
@@ -491,13 +484,10 @@ def normalise_images(
     if return_single:
         # If only one image was requested, return it directly
         if len(results) == 1:
-            logger.remove(logger_id)
             return results[0]
         else:
             logger.warning(
                 "Multiple images loaded but only one was requested. Returning the first image."
             )
-            logger.remove(logger_id)
             return results[0]
-    logger.remove(logger_id)
     return results

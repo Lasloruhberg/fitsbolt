@@ -20,9 +20,10 @@ Tests for the normalisation functionality in normalisation.py and NormalisationM
 
 import numpy as np
 import pytest
-from loguru import logger
+import logging
 
 from fitsbolt.cfg.create_config import create_config
+from fitsbolt.cfg import logger
 from fitsbolt.normalisation.normalisation import (
     _normalise_image,
     _type_conversion,
@@ -40,10 +41,28 @@ from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 
 @pytest.fixture
 def caplog(caplog):
-    """Configure loguru to use the caplog handler"""
-    handler_id = logger.add(caplog.handler)
+    """Configure fitsbolt logger to capture logs with caplog"""
+    # Ensure we're working with the logger instance
+    fitsbolt_logger = logger._logger
+    
+    # Set up the logger to use the caplog handler
+    original_handlers = fitsbolt_logger.handlers[:]
+    original_level = fitsbolt_logger.level
+    original_propagate = fitsbolt_logger.propagate
+    
+    # Clear existing handlers and add caplog handler
+    fitsbolt_logger.handlers.clear()
+    fitsbolt_logger.addHandler(caplog.handler)
+    fitsbolt_logger.setLevel(logging.DEBUG)
+    fitsbolt_logger.propagate = True
+    
     yield caplog
-    logger.remove(handler_id)
+    
+    # Restore original configuration
+    fitsbolt_logger.handlers.clear()
+    fitsbolt_logger.handlers.extend(original_handlers)
+    fitsbolt_logger.setLevel(original_level)
+    fitsbolt_logger.propagate = original_propagate
 
 
 def get_test_config(method=NormalisationMethod.CONVERSION_ONLY):
@@ -246,7 +265,8 @@ class TestNormalisationUtilities:
         # Check logs for warnings
         caplog.clear()
         _expand([1.0, 2.0], 3)
-        assert "| WARNING  | fitsbolt.normalisation.normalisation:_expand:" in caplog.text
+        # Check that a warning was logged (format will depend on how the logger is configured)
+        assert any(record.levelname == "WARNING" for record in caplog.records)
         caplog.clear()
 
 

@@ -15,8 +15,10 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .create_config import create_config, validate_config
+from .logger import logger
 
 __all__ = [
     "create_config",
     "validate_config",
+    "logger",
 ]
