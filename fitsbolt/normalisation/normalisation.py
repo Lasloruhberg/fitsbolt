@@ -14,11 +14,10 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import sys
 import numpy as np
-from loguru import logger
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
+import warnings
 
 from skimage.util import img_as_ubyte, img_as_uint, img_as_float32
 
@@ -33,6 +32,7 @@ from astropy.visualization import (
 
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 from fitsbolt.cfg.create_config import create_config
+from fitsbolt.cfg.logger import logger
 
 
 def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
@@ -45,7 +45,7 @@ def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
         return img_as_float32(data)
     else:
         # Default to uint8 if output_dtype is not specified or not supported
-        logger.warning(f"Unsupported output dtype: {cfg.output_dtype}, defaulting to uint8")
+        warnings.warn(f"Unsupported output dtype: {cfg.output_dtype}, defaulting to uint8")
         return img_as_ubyte(data)
 
 
@@ -69,7 +69,7 @@ def _crop_center(data: np.ndarray, crop_height: int, crop_width: int) -> np.ndar
     top = (h - crop_height) // 2
     left = (w - crop_width) // 2
     if top < 0 or left < 0:
-        logger.warning("Crop size is larger than image size, returning original image")
+        warnings.warn("Crop size is larger than image size, returning original image")
         return data
     return data[top : top + crop_height, left : left + crop_width]
 
@@ -152,9 +152,7 @@ def _log_normalisation(data, cfg):
     if minimum < maximum:
         norm = ImageNormalize(data, vmin=minimum, vmax=maximum, stretch=LogStretch(), clip=True)
     else:
-        logger.warning(
-            "Image minimum value is larger than maximum, ignoring boundaries and using a LinearInterval"
-        )
+        warnings.warn("Image maximum is not larger than minimum, using linear normalisation")
         norm = ImageNormalize(data, vmin=None, vmax=None, stretch=LogStretch(), clip=True)
     img_normalised = norm(data)  # range 0,1
     # Convert back to uint8 range
@@ -172,7 +170,7 @@ def _zscale_normalisation(data, cfg):
         numpy array: A normalised image in the specified output data type
     """
     if not np.any(data != data.flat[0]):  # Constant value check
-        logger.warning("Zscale normalisation: constant image detected, using fallback conversion.")
+        warnings.warn("Zscale normalisation: constant image detected, using fallback conversion.")
         return _conversiononly_normalisation(data, cfg)
 
     # Min Max value do not apply, also no constrain to center
@@ -182,7 +180,7 @@ def _zscale_normalisation(data, cfg):
         # Convert back to specified dtype
         return _type_conversion(img_normalised, cfg)
     else:
-        logger.warning(
+        warnings.warn(
             "Zscale normalisation: image maximum value not larger than minimum, only converting image"
         )
         return _conversiononly_normalisation(data, cfg)
@@ -252,9 +250,8 @@ def _conversiononly_normalisation(data, cfg):
         img_normalised = norm(data)  # range 0,1
         return _type_conversion(img_normalised, cfg)
     else:
-        logger.warning(
-            "Conversion normalisation: Image minimum value is larger than maximum, setting image to 0"
-        )
+        warnings.warn("Image maximum is not larger than minimum, returning zero array")
+        # this is something that can happen with certain settings, so this should not raise an exception
         return np.zeros_like(data, dtype=cfg.output_dtype)
 
 
@@ -270,7 +267,8 @@ def _expand(value, length: int) -> np.ndarray:
         # input parameter mismatch
         if arr.size != 1:
             logger.warning(
-                f"Parameter asinh_scale or asinh_clip: {value!r} has length {arr.size}, expected {length}."
+                f"Parameter norm_asinh_scale or norm_asinh_clip: {value!r} has length {arr.size}, expected {length}."
+                + " Will use first element"
             )
         try:
             arr = np.full(length, arr[0], dtype=np.float32)
@@ -336,9 +334,9 @@ def _asinh_normalisation(data, cfg):
     if min_value < max_value:
         return _type_conversion((normalised - min_value) / (max_value - min_value), cfg)
     else:
-        logger.warning(
-            "Image maximum value is not larger than minimum, using minimal normalisation instead. Check settings"
-        )
+
+        warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
+
         return _conversiononly_normalisation(data, cfg=cfg)
 
 
@@ -392,10 +390,11 @@ def normalise_images(
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
     norm_crop_for_maximum_value=None,
-    norm_asinh_scale=[0.7, 0.7, 0.7],
-    norm_asinh_clip=[99.8, 99.8, 99.8],
+    norm_asinh_scale=[0.7],
+    norm_asinh_clip=[99.8],
     desc="Normalising images",
     show_progress=True,
+    log_level="WARNING",
 ):
     """Load and process multiple images in parallel.
 
@@ -410,11 +409,15 @@ def normalise_images(
         norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
                                                 (normally defaults to 0). Defaults to False.
         norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
+        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                            should have the length of n_channels or 1. Defaults to [0.7].
+        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                            should have the length of n_channels or 1. Defaults to [99.8].
         filepaths (list): List of image filepaths to load
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
+        log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
+                                   Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
 
     Returns:
         list: List of images for successfully normalised images
@@ -442,17 +445,11 @@ def normalise_images(
         norm_crop_for_maximum_value=norm_crop_for_maximum_value,
         norm_asinh_scale=norm_asinh_scale,
         norm_asinh_clip=norm_asinh_clip,
+        log_level=log_level,
     )
-    # initialise logger
-    logger.remove()
 
     # Add a new logger configuration for console output
-    logger.add(
-        sys.stderr,
-        colorize=True,
-        level=cfg.log_level.upper(),
-        format="<green>{time:HH:mm:ss}</green>|astro-loader-<blue>{level}</blue>| <level>{message}</level>",
-    )
+    logger.set_log_level(cfg.log_level)
 
     logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
 
@@ -466,10 +463,13 @@ def normalise_images(
                 image,
                 cfg,
             )
+            if image is None:
+                logger.error("Failed to normalise image")
+                raise ValueError("Image normalisation failed. Check the image content.")
             return image
         except Exception as e:
             logger.error(f"Error loading {image}: {str(e)}")
-            return None
+            raise e
 
     # Use ThreadPoolExecutor for parallel loading
     with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
@@ -483,9 +483,6 @@ def normalise_images(
             )
         else:
             results = list(executor.map(normalise_single_image, images))
-
-    # Filter out None results (failed loads)
-    results = [r for r in results if r is not None]
 
     logger.debug(f"Successfully loaded {len(results)} of {len(images)} images")
     if return_single:

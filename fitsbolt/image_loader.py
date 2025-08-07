@@ -14,15 +14,14 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import sys
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-from loguru import logger
 
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 from fitsbolt.normalisation.normalisation import _normalise_image
 from fitsbolt.cfg.create_config import create_config, validate_config
+from fitsbolt.cfg.logger import logger
 from fitsbolt.resize import _resize_image
 from fitsbolt.read import _read_image
 
@@ -69,7 +68,6 @@ def _load_image(filepath, cfg):
 
 def load_and_process_images(
     filepaths,
-    cfg=None,
     output_dtype=np.uint8,
     size=[224, 224],
     fits_extension=None,
@@ -82,17 +80,18 @@ def load_and_process_images(
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
     norm_crop_for_maximum_value=None,
-    norm_asinh_scale=[0.7, 0.7, 0.7],
-    norm_asinh_clip=[99.8, 99.8, 99.8],
+    norm_asinh_scale=[0.7],
+    norm_asinh_clip=[99.8],
     desc="Loading images",
     show_progress=True,
+    log_level="WARNING",
+    cfg=None,
 ):
     """Load and process multiple images in parallel.
         this will first read the image, then normalise it and finally resize it.
 
     Args:
         filepaths (list): filepath or list of image filepaths to load, or list of lists for multi-FITS mode
-        cfg (DotMap, optional): Configuration settings. Defaults to None.
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
         size (list, optional): Target size for image resizing. Defaults to [224, 224].
         fits_extension (int, str, list, optional): The FITS extension(s) to use. Can be:
@@ -113,12 +112,16 @@ def load_and_process_images(
         norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
                                                 (normally defaults to 0). Defaults to False.
         norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation. Defaults to [0.7, 0.7, 0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation. Defaults to [99.8, 99.8, 99.8].
-        filepaths (list): List of image filepaths to load
-        size (tuple, optional): Size to resize images to (height, width)
+        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                            should have the length of n_channels or 1. Defaults to [0.7].
+        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                            should have the length of n_channels or 1. Defaults to [99.8].
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
+        log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
+                                   Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
+        cfg (DotMap, optional): Configuration settings. Defaults to None.
+
 
     Returns:
         list: List of images for successfully loaded and processed images
@@ -163,19 +166,13 @@ def load_and_process_images(
             norm_crop_for_maximum_value=norm_crop_for_maximum_value,
             norm_asinh_scale=norm_asinh_scale,
             norm_asinh_clip=norm_asinh_clip,
+            log_level=log_level,
         )
     else:
         validate_config(cfg)
-    # initialise logger
-    logger.remove()
 
     # Add a new logger configuration for console output
-    logger.add(
-        sys.stderr,
-        colorize=True,
-        level=cfg.log_level.upper(),
-        format="<green>{time:HH:mm:ss}</green>|astro-loader-<blue>{level}</blue>| <level>{message}</level>",
-    )
+    logger.set_log_level(cfg.log_level)
 
     logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
 
@@ -189,10 +186,15 @@ def load_and_process_images(
                 filepath,
                 cfg,
             )
+            if image is None:
+                logger.error(f"Failed to load image from {filepath}")
+                raise ValueError(
+                    f"Image loading failed for {filepath}. Check the file format and content."
+                )
             return image
         except Exception as e:
             logger.error(f"Error loading {filepath}: {str(e)}")
-            return None
+            raise e
 
     # Use ThreadPoolExecutor for parallel loading
     with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
@@ -206,9 +208,6 @@ def load_and_process_images(
             )
         else:
             results = list(executor.map(load_single_image, filepaths))
-
-    # Filter out None results (failed loads)
-    results = [r for r in results if r is not None]
 
     logger.debug(f"Successfully loaded {len(results)} of {len(filepaths)} images")
     if return_single:

@@ -15,16 +15,16 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
-import sys
 import numpy as np
+import warnings
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-from loguru import logger
 from astropy.io import fits
 
 from fitsbolt.cfg.create_config import create_config
 from fitsbolt.cfg.create_config import SUPPORTED_IMAGE_EXTENSIONS
+from fitsbolt.cfg.logger import logger
 
 
 def read_images(
@@ -36,6 +36,7 @@ def read_images(
     desc="Reading images",
     show_progress=True,
     force_dtype=True,
+    log_level="WARNING",
 ):
     """Load and process multiple images in parallel.
 
@@ -55,6 +56,8 @@ def read_images(
         show_progress (bool): Whether to show a progress bar
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
                                      like channel combination. Defaults to True.
+        log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
+                                   Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
 
     Returns:
         list: image or list of images for successfully read images
@@ -96,18 +99,11 @@ def read_images(
         channel_combination=channel_combination,
         num_workers=num_workers,
         force_dtype=force_dtype,
+        log_level=log_level,
     )
-
-    # initialise logger
-    logger.remove()
 
     # Add a new logger configuration for console output
-    logger.add(
-        sys.stderr,
-        colorize=True,
-        level=cfg.log_level.upper(),
-        format="<green>{time:HH:mm:ss}</green>|astro-loader-<blue>{level}</blue>| <level>{message}</level>",
-    )
+    logger.set_log_level(cfg.log_level)
 
     logger.debug(f"Setting LogLevel to {cfg.log_level.upper()}")
 
@@ -126,7 +122,7 @@ def read_images(
                 return image
             except Exception as e:
                 logger.error(f"Error loading {filepaths}: {str(e)}")
-                return None
+                raise e
 
     else:
 
@@ -139,7 +135,7 @@ def read_images(
                 return image
             except Exception as e:
                 logger.error(f"Error loading {filepath}: {str(e)}")
-                return None
+                raise e
 
     # Use ThreadPoolExecutor for parallel loading
     with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
@@ -154,9 +150,6 @@ def read_images(
         else:
             results = list(executor.map(read_single_image, filepaths))
 
-    # Filter out None results (failed loads)
-    results = [r for r in results if r is not None]
-
     logger.debug(f"Successfully loaded {len(results)} of {len(filepaths)} images")
     if return_single:
         # If only one image was requested, return it directly
@@ -169,7 +162,7 @@ def read_images(
             return results[0]
         else:
             logger.error("No images were successfully loaded")
-            return None
+            raise ValueError("No images were successfully loaded")
     return results
 
 
@@ -242,10 +235,11 @@ def _read_multi_fits_image(filepaths, fits_extensions, cfg):
             if ext_data.ndim > 2:
                 logger.warning(
                     f"FITS extension {extension} in file {filepath} has more than 2 dimensions. "
-                    f"Setting to empty image"
                 )
-                # use dim 1 as in both H,W,C or C,H,W this will work for square images
-                ext_data = np.zeros((ext_data.shape[1], ext_data.shape[1]), dtype=ext_data.dtype)
+                raise ValueError(
+                    f"FITS extension {extension} in file {filepath} has more than 2 dimensions. "
+                    "Not supported"
+                )
 
             extension_images.append(ext_data)
             extension_shapes.append(ext_data.shape)
@@ -287,7 +281,13 @@ def _read_multi_fits_image(filepaths, fits_extensions, cfg):
             )
         # Transpose to get (Height, Width, Extensions) which is compatible with RGB format
         image = np.transpose(image, (1, 2, 0))
-
+    if image is None:
+        logger.error(f"Failed to read image from {filepath}")
+        raise ValueError(f"Image reading failed for {filepath}. Check the file format and content.")
+    elif isinstance(image, np.ndarray):
+        if image.size == 0:
+            logger.error(f"Image from {filepath} is empty (size 0)")
+            raise ValueError(f"Image from {filepath} is empty (size 0)")
     return image
 
 
@@ -338,10 +338,14 @@ def _read_image(filepath, cfg):
                     if image.ndim == 3:
                         logger.warning(
                             f"FITS extension 0 in file {filepath} contains 3D data (shape: {image.shape}). "
-                            f"Single extension should be 2D. Replacing with black image."
+                            f"Single extension should be 2D."
                         )
                         # Create a 2D black image with the spatial dimensions of the original
-                        image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
+                        raise ValueError(
+                            f"FITS extension 0 in file {filepath} contains 3D data (shape: {image.shape}). "
+                            f"Single extension should be 2D. Not supported"
+                        )
+
                 elif isinstance(fits_extension, list):
                     # Handle list of extensions - need to load and combine them
                     extension_images = []
@@ -388,11 +392,12 @@ def _read_image(filepath, cfg):
                         if ext_data.ndim > 2:
                             logger.warning(
                                 f"FITS extension {ext} in file {filepath} has more than 2 dimensions. "
-                                f"Setting to empty image"
+                                "Not supported"
                             )
                             # use dim 1 as in both H,W,C or C,H,W this will work for square images
-                            ext_data = np.zeros(
-                                (ext_data.shape[1], ext_data.shape[1]), dtype=ext_data.dtype
+                            raise ValueError(
+                                f"FITS extension {ext} in file {filepath} has more than 2 dimensions. "
+                                "Not supported"
                             )
                         extension_images.append(ext_data)
                         extension_shapes.append(ext_data.shape)
@@ -428,18 +433,6 @@ def _read_image(filepath, cfg):
                     # If images are 3D (Height, Width, Channels), stack results in 4D (Ext, Height, Width, Channels)
                     # For 2D images (now 3D after stacking), treat extensions as channels (RGB)
                     if len(extension_shapes[0]) == 2:
-                        # Only use up to 3 extensions for RGB (more will be handled later by truncation)
-                        if len(image) > 3:
-                            import warnings
-
-                            warnings.warn(
-                                f"More than 3 extensions provided for file {filepath}. "
-                                f"Only the first 3 will be used as RGB channels."
-                            )
-                            logger.warning(
-                                f"More than 3 extensions provided for file {filepath}. "
-                                f"Only the first 3 will be used as RGB channels."
-                            )
                         # Transpose to get (Height, Width, Extensions) which is compatible with RGB format
                         image = np.transpose(image, (1, 2, 0))
                 elif isinstance(fits_extension, (int, np.integer)):
@@ -458,10 +451,12 @@ def _read_image(filepath, cfg):
                     if image.ndim == 3:
                         logger.warning(
                             f"FITS extension {extension_idx} in file {filepath} contains 3D data (shape: {image.shape}). "
-                            f"Single extension should be 2D. Replacing with black image."
+                            f"Single extension should be 2D. Not supported"
                         )
-                        # Create a 2D black image with the spatial dimensions of the original
-                        image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
+                        raise ValueError(
+                            f"FITS extension {extension_idx} in file {filepath} contains 3D data (shape: {image.shape}). "
+                            f"Single extension should be 2D. Not supported"
+                        )
                 else:
                     # Try as string extension name
                     try:
@@ -471,10 +466,13 @@ def _read_image(filepath, cfg):
                         if image.ndim == 3:
                             logger.warning(
                                 f"FITS extension '{fits_extension}' in file {filepath} contains 3D data "
-                                f"(shape: {image.shape}). Single extension should be 2D. Replacing with black image."
+                                f"(shape: {image.shape}). Single extension should be 2D."
                             )
                             # Create a 2D black image with the spatial dimensions of the original
-                            image = np.zeros((image.shape[1], image.shape[2]), dtype=image.dtype)
+                            raise ValueError(
+                                f"FITS extension '{fits_extension}' in file {filepath} contains 3D data "
+                                f"(shape: {image.shape}). Single extension should be 2D. Not supported"
+                            )
                     except KeyError:
                         available_ext = [ext.name for ext in hdul if hasattr(ext, "name")]
                         logger.error(
@@ -500,7 +498,7 @@ def _read_image(filepath, cfg):
 
             # Handle dimension issues in FITS data
             if image.ndim > 3:
-                logger.warning(
+                warnings.warn(
                     f"FITS image {filepath} has more than 3 dimensions. Taking the first 3 dimensions."
                 )
                 image = image[:3]
@@ -521,6 +519,10 @@ def _read_image(filepath, cfg):
         assert (
             image.ndim >= 2 and image.ndim <= 3
         ), f"Image {filepath} has less than 2 or more than 3 dimensions: {image.shape}"
+
+        # raise an error if the image is empty or not loaded correctly
+        assert image.size > 0, f"Image {filepath} is empty or not loaded correctly"
+
     # make sure image is in H,W,C and not C,H,W format
     if image.shape[0] == cfg.n_output_channels and image.shape[-1] != cfg.n_output_channels:
         image = np.transpose(image, (1, 2, 0))
@@ -542,6 +544,13 @@ def _read_image(filepath, cfg):
         ), f"After reading, image has unexpected shape: {image.shape} - {filepath}"
 
     # return H,W for single channel or H,W,C for multi-channel
+    if image is None:
+        logger.error(f"Failed to read image from {filepath}")
+        raise ValueError(f"Image reading failed for {filepath}. Check the file format and content.")
+    elif isinstance(image, np.ndarray):
+        if image.size == 0:
+            logger.error(f"Image from {filepath} is empty (size 0)")
+            raise ValueError(f"Image from {filepath} is empty (size 0)")
     return image
 
 
