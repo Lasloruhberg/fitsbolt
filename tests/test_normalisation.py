@@ -44,20 +44,20 @@ def caplog(caplog):
     """Configure fitsbolt logger to capture logs with caplog"""
     # Ensure we're working with the logger instance
     fitsbolt_logger = logger._logger
-    
+
     # Set up the logger to use the caplog handler
     original_handlers = fitsbolt_logger.handlers[:]
     original_level = fitsbolt_logger.level
     original_propagate = fitsbolt_logger.propagate
-    
+
     # Clear existing handlers and add caplog handler
     fitsbolt_logger.handlers.clear()
     fitsbolt_logger.addHandler(caplog.handler)
     fitsbolt_logger.setLevel(logging.DEBUG)
     fitsbolt_logger.propagate = True
-    
+
     yield caplog
-    
+
     # Restore original configuration
     fitsbolt_logger.handlers.clear()
     fitsbolt_logger.handlers.extend(original_handlers)
