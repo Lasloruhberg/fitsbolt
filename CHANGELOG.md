@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.1] - 2025-08-06
+## [0.1.1] - 2025-08-07
 
 ### Added
 
@@ -8,10 +8,12 @@
 
 ### Fixed
 
-- logger name to 'fitsbolt'
+- logger name set to 'fitsbolt'
+- log level can be set at function call
 
 ### Changed
 
+- logger is now module specific and does not remove other loggers.
 - any failure in read, normalise or resize will lead to an Exception instead of just logging a warning
 
 ### Removed
