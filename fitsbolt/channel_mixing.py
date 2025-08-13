@@ -62,6 +62,17 @@ def apply_channel_combination(
     return result
 
 
+def batch_convert_from_greyscale(images, n_output_channels):
+    """Converts an array of N_images, H, W, 1 to N_images to H,W,1,N_output_channels
+
+    Args:
+        images (numpy.ndarray): Input array of shape (N_images, H, W, 1)
+        n_output_channels (int): Number of output channels
+    """
+    # Repeat the grayscale channel to create the desired number of output channels
+    return np.repeat(images, n_output_channels, axis=-1)
+
+
 def convert_greyscale_to_nchannels(image, n_output_channels):
     """
     Convert a grayscale image to a specified number of channels.
