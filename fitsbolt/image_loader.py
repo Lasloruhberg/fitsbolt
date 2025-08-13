@@ -20,10 +20,11 @@ from tqdm import tqdm
 
 from .normalisation.NormalisationMethod import NormalisationMethod
 from .normalisation.normalisation import _normalise_image
-from .cfg.create_config import create_config, validate_config
+from .cfg.create_config import create_config, validate_config, recompute_config_channel_combination
 from .cfg.logger import logger
 from .resize import _resize_image
 from .read import _read_image
+from .channel_mixing import batch_channel_combination
 
 
 def _process_image(
@@ -42,9 +43,24 @@ def _process_image(
     """
     try:
         logger.trace(f"Normalising image with setting {cfg.normalisation_method}")
+        # first resize, then normalise, then combine channels
+        image = _resize_image(image, cfg)
+
         image = _normalise_image(image, cfg=cfg)
 
-        image = _resize_image(image, cfg)
+        original_dtype = image.dtype
+        # _read image has no channel combination anymore and channel_combination must be done manually now
+        recompute_config_channel_combination(cfg)
+        # batch expects a 1, H,W,C image
+        image = np.expand_dims(image, axis=0)
+        image = batch_channel_combination(
+            image,
+            cfg.channel_combination,
+            original_dtype,
+            cfg.force_dtype,
+        )
+        # want to squeeze the image axis again
+        image = np.squeeze(image, axis=0)
 
         return image
 

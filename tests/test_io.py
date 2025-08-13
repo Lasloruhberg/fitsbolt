@@ -438,13 +438,13 @@ class TestImageIO:
             gray_to_rgb_img.shape[2] == 3
         ), "Grayscale should be converted to RGB with n_output_channels=3"
 
-    def test_fits_loading_parallel_with_extension_int(self, test_config):
+    def test_fits_loading_parallel_with_extension_int(self):
         """Test parallel loading of FITS files with extension index 0."""
-        # Use recreate_config to properly set fits_extension
-        cfg = self.recreate_config(test_config, fits_extension=0, n_output_channels=3)
         file_paths = [self.fits_path, self.multi_fits_path]
 
-        results = load_and_process_images(file_paths, cfg=cfg, num_workers=2, show_progress=False)
+        results = load_and_process_images(
+            file_paths, fits_extension=0, n_output_channels=3, num_workers=2, show_progress=False
+        )
 
         assert len(results) == 2
         for image in results:

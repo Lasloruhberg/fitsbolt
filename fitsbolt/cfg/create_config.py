@@ -502,3 +502,43 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
     else:
         if current_log_level in ["DEBUG", "INFO", "TRACE"]:
             logger.info("Config: validation successful")
+
+
+def recompute_config_channel_combination(cfg):
+    """Recomputes the channel combination mapping based on the current configuration.
+
+    Args:
+        cfg (Config): The configuration object containing the current settings.
+        Must include n_expected_channels, should only be called after _read_image
+
+    Raises:
+        ValueError: If the channel combination mapping cannot be determined.
+    """
+    # no channel combination, eg not fits extensions specified
+    # get n_expected_channels from read, compare to n_output_channels and create a 1_to n mapping
+    # if n_expected=1 or 1:1 raise a Value Error otherwise
+    # cfg.n_expected_channels is stored as a list, so extract the actual number
+    actual_expected_channels = (
+        cfg.n_expected_channels[0]
+        if isinstance(cfg.n_expected_channels, list)
+        else cfg.n_expected_channels
+    )
+
+    if actual_expected_channels == 1:
+        channel_combination = np.ones((cfg.n_output_channels, actual_expected_channels))
+    elif actual_expected_channels == cfg.n_output_channels:
+        channel_combination = np.eye(cfg.n_output_channels)
+    elif actual_expected_channels == 4 and cfg.n_output_channels == 3:
+        # Common case: RGBA to RGB, drop the alpha channel
+        channel_combination = np.eye(3, 4)
+    else:
+        raise ValueError(
+            f"From files got {actual_expected_channels} expected channels, "
+            f"but requested {cfg.n_output_channels} output channels. "
+            "Cannot automatically create a valid channel combination mapping. "
+            "Please provide the channel_combination parameter"
+        )
+
+    # Store the computed channel combination in the config
+    cfg.channel_combination = channel_combination
+    return

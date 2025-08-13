@@ -22,8 +22,11 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from astropy.io import fits
 
-from .cfg.create_config import create_config
-from .cfg.create_config import SUPPORTED_IMAGE_EXTENSIONS
+from .cfg.create_config import (
+    create_config,
+    SUPPORTED_IMAGE_EXTENSIONS,
+    recompute_config_channel_combination,
+)
 from .cfg.logger import logger
 from .channel_mixing import (
     batch_channel_combination,
@@ -161,33 +164,7 @@ def read_images(
     # otherwise create_cfg will have managed it
     channel_combination_exists = cfg.get("channel_combination") is not None
     if not channel_combination_exists:
-        # no channel combination, eg not fits extensions specified
-        # get n_expected_channels from read, compare to n_output_channels and create a 1_to n mapping
-        # if n_expected=1 or 1:1 raise a Value Error otherwise
-        # cfg.n_expected_channels is stored as a list, so extract the actual number
-        actual_expected_channels = (
-            cfg.n_expected_channels[0]
-            if isinstance(cfg.n_expected_channels, list)
-            else cfg.n_expected_channels
-        )
-
-        if actual_expected_channels == 1:
-            channel_combination = np.ones((cfg.n_output_channels, actual_expected_channels))
-        elif actual_expected_channels == cfg.n_output_channels:
-            channel_combination = np.eye(cfg.n_output_channels)
-        elif actual_expected_channels == 4 and cfg.n_output_channels == 3:
-            # Common case: RGBA to RGB, drop the alpha channel
-            channel_combination = np.eye(3, 4)
-        else:
-            raise ValueError(
-                f"From files got {actual_expected_channels} expected channels, "
-                f"but requested {cfg.n_output_channels} output channels. "
-                "Cannot automatically create a valid channel combination mapping. "
-                "Please provide the channel_combination parameter"
-            )
-
-        # Store the computed channel combination in the config
-        cfg.channel_combination = channel_combination
+        recompute_config_channel_combination(cfg)
 
     original_dtype = results[0].dtype
     if cfg.channel_combination is not None and not read_only:
