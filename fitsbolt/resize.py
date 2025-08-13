@@ -19,8 +19,8 @@ from skimage.transform import resize
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
-from fitsbolt.cfg.create_config import create_config
-from fitsbolt.cfg.logger import logger
+from .cfg.create_config import create_config
+from .cfg.logger import logger
 
 
 def resize_images(

@@ -18,12 +18,12 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
-from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
-from fitsbolt.normalisation.normalisation import _normalise_image
-from fitsbolt.cfg.create_config import create_config, validate_config
-from fitsbolt.cfg.logger import logger
-from fitsbolt.resize import _resize_image
-from fitsbolt.read import _read_image
+from .normalisation.NormalisationMethod import NormalisationMethod
+from .normalisation.normalisation import _normalise_image
+from .cfg.create_config import create_config, validate_config
+from .cfg.logger import logger
+from .resize import _resize_image
+from .read import _read_image
 
 
 def _process_image(

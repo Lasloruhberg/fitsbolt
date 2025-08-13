@@ -29,8 +29,10 @@ from fitsbolt.cfg.create_config import create_config
 from fitsbolt.read import (
     read_images,
     _read_image,
-    _apply_channel_combination,
-    _convert_greyscale_to_nchannels,
+)
+from fitsbolt.channel_mixing import (
+    apply_channel_combination,
+    convert_greyscale_to_nchannels,
 )
 
 
@@ -160,8 +162,8 @@ class TestReadFunctions:
             # If test setup failed, skip instead of failing
             pytest.skip(f"3D fits extension test skipped (Not supported yet): {str(e)}")
 
-    def test_apply_channel_combination_with_force_dtype(self):
-        """Test _apply_channel_combination with force_dtype."""
+    def testapply_channel_combination_with_force_dtype(self):
+        """Test apply_channel_combination with force_dtype."""
         # Create test extension images
         ext_images = [
             np.ones((10, 10), dtype=np.uint8) * 100,  # First extension
@@ -193,7 +195,7 @@ class TestReadFunctions:
                 weights[i] = weights[i] / row_sum
 
         # Test with uint8 dtype
-        result_uint8 = _apply_channel_combination(
+        result_uint8 = apply_channel_combination(
             ext_images, weights, original_dtype=np.uint8, force_dtype=True
         )
 
@@ -206,7 +208,7 @@ class TestReadFunctions:
             np.ones((10, 10), dtype=np.uint16) * 2000,
         ]
 
-        result_uint16 = _apply_channel_combination(
+        result_uint16 = apply_channel_combination(
             ext_images_uint16, weights, original_dtype=np.uint16, force_dtype=True
         )
 
@@ -218,7 +220,7 @@ class TestReadFunctions:
             np.ones((10, 10), dtype=np.int8) * -50,
         ]
 
-        result_int8 = _apply_channel_combination(
+        result_int8 = apply_channel_combination(
             ext_images_int8, weights, original_dtype=np.int8, force_dtype=True
         )
 
@@ -231,22 +233,22 @@ class TestReadFunctions:
                 np.ones((10, 10), dtype=dtype) * 1.5,
             ]
 
-            result_float = _apply_channel_combination(
+            result_float = apply_channel_combination(
                 ext_images_float, weights, original_dtype=dtype, force_dtype=True
             )
 
             assert result_float.dtype == dtype
 
         # Test without force_dtype
-        result_no_force = _apply_channel_combination(
+        result_no_force = apply_channel_combination(
             ext_images, weights, original_dtype=np.uint8, force_dtype=False
         )
 
         # Should keep the default float dtype from tensor operations
         assert np.issubdtype(result_no_force.dtype, np.floating)
 
-    def test_apply_channel_combination_with_different_shapes(self):
-        """Test _apply_channel_combination with different shaped extension images."""
+    def testapply_channel_combination_with_different_shapes(self):
+        """Test apply_channel_combination with different shaped extension images."""
         # Create test extension images with different shapes
         ext_images = [
             np.ones((5, 5), dtype=np.float32),  # First extension
@@ -270,40 +272,40 @@ class TestReadFunctions:
                 weights[i] = weights[i] / row_sum
 
         # Apply channel combination
-        result = _apply_channel_combination(ext_images, weights)
+        result = apply_channel_combination(ext_images, weights)
 
         # Check the result has shape (H, W, C)
         assert result.ndim == 3
         assert result.shape[1:] == (5, 5)  # Height, Width
         assert result.shape[0] == 3  # 3 channels (RGB)
 
-    def test_convert_greyscale_to_nchannels(self):
-        """Test _convert_greyscale_to_nchannels function."""
+    def testconvert_greyscale_to_nchannels(self):
+        """Test convert_greyscale_to_nchannels function."""
         # Test with 2D grayscale input and n_output_channels=1
         gray_2d = np.ones((10, 10), dtype=np.uint8) * 127
-        result_2d_to_1 = _convert_greyscale_to_nchannels(gray_2d, n_output_channels=1)
+        result_2d_to_1 = convert_greyscale_to_nchannels(gray_2d, n_output_channels=1)
         assert result_2d_to_1.shape == (10, 10)
         assert result_2d_to_1.ndim == 2
 
         # Test with 2D grayscale input and n_output_channels=3
-        result_2d_to_3 = _convert_greyscale_to_nchannels(gray_2d, n_output_channels=3)
+        result_2d_to_3 = convert_greyscale_to_nchannels(gray_2d, n_output_channels=3)
         assert result_2d_to_3.shape == (10, 10, 3)
         assert result_2d_to_3.ndim == 3
 
         # Test with 3D grayscale input (H, W, 1) and n_output_channels=1
         gray_3d = np.ones((10, 10, 1), dtype=np.uint8) * 127
-        result_3d_to_1 = _convert_greyscale_to_nchannels(gray_3d, n_output_channels=1)
+        result_3d_to_1 = convert_greyscale_to_nchannels(gray_3d, n_output_channels=1)
         assert result_3d_to_1.shape == (10, 10)
         assert result_3d_to_1.ndim == 2
 
         # Test with 3D grayscale input (H, W, 1) and n_output_channels=3
-        result_3d_to_3 = _convert_greyscale_to_nchannels(gray_3d, n_output_channels=3)
+        result_3d_to_3 = convert_greyscale_to_nchannels(gray_3d, n_output_channels=3)
         assert result_3d_to_3.shape == (10, 10, 3)
         assert result_3d_to_3.ndim == 3
 
         # Test with RGBA input (4 channels) and n_output_channels=3
         rgba = np.ones((10, 10, 4), dtype=np.uint8) * 127
-        result_rgba_to_rgb = _convert_greyscale_to_nchannels(rgba, n_output_channels=3)
+        result_rgba_to_rgb = convert_greyscale_to_nchannels(rgba, n_output_channels=3)
         assert result_rgba_to_rgb.shape == (10, 10, 3)
         assert result_rgba_to_rgb.ndim == 3
 
@@ -355,14 +357,14 @@ class TestReadFunctions:
         )
 
         # Should handle division by zero gracefully
-        result = _apply_channel_combination(ext_images, weights.copy())
+        result = apply_channel_combination(ext_images, weights.copy())
         assert not np.isnan(result).any(), "Result should not contain NaN values"
 
         # Test with single extension but multiple output channels
         single_ext = [np.ones((10, 10), dtype=np.float32) * 100]
         weights_single = np.array([[1.0], [1.0], [1.0]])
 
-        result_single = _apply_channel_combination(single_ext, weights_single)
+        result_single = apply_channel_combination(single_ext, weights_single)
         assert result_single.shape == (3, 10, 10)  # not transposed by the channel combination
         assert np.allclose(result_single[:, :, 0], 100)
 
@@ -770,8 +772,8 @@ class TestReadFunctions:
         # but the code path exists for when len(results) == 0 in return_single mode
         pass
 
-    def test_apply_channel_combination_dtype_forcing(self):
-        """Test dtype forcing in _apply_channel_combination."""
+    def testapply_channel_combination_dtype_forcing(self):
+        """Test dtype forcing in apply_channel_combination."""
         # Test with different dtypes
         ext_images_uint8 = [
             np.ones((10, 10), dtype=np.uint8) * 100,
@@ -781,37 +783,37 @@ class TestReadFunctions:
         weights = np.array([[0.5, 0.5], [0.3, 0.7], [0.7, 0.3]])
 
         # Test with force_dtype=True and uint8
-        result_uint8 = _apply_channel_combination(
+        result_uint8 = apply_channel_combination(
             ext_images_uint8, weights, original_dtype=np.uint8, force_dtype=True
         )
         assert result_uint8.dtype == np.uint8
 
         # Test with force_dtype=True and uint16
-        result_uint16 = _apply_channel_combination(
+        result_uint16 = apply_channel_combination(
             ext_images_uint8, weights, original_dtype=np.uint16, force_dtype=True
         )
         assert result_uint16.dtype == np.uint16
 
         # Test with force_dtype=True and int8
-        result_int8 = _apply_channel_combination(
+        result_int8 = apply_channel_combination(
             ext_images_uint8, weights, original_dtype=np.int8, force_dtype=True
         )
         assert result_int8.dtype == np.int8
 
         # Test with force_dtype=True and float32
-        result_float32 = _apply_channel_combination(
+        result_float32 = apply_channel_combination(
             ext_images_uint8, weights, original_dtype=np.float32, force_dtype=True
         )
         assert result_float32.dtype == np.float32
 
         # Test with force_dtype=False
-        result_no_force = _apply_channel_combination(
+        result_no_force = apply_channel_combination(
             ext_images_uint8, weights, original_dtype=np.uint8, force_dtype=False
         )
         # Should not necessarily be uint8 but should be valid
         assert isinstance(result_no_force, np.ndarray)
 
-    def test_apply_channel_combination_zero_weights_handling(self):
+    def testapply_channel_combination_zero_weights_handling(self):
         """Test handling of zero weights in channel combination."""
         ext_images = [
             np.ones((5, 5), dtype=np.float32) * 100,
@@ -821,5 +823,5 @@ class TestReadFunctions:
         # Create weights with a zero sum row
         weights = np.array([[0.0, 0.0], [0.5, 0.5], [1.0, 0.0]])
 
-        result = _apply_channel_combination(ext_images, weights)
+        result = apply_channel_combination(ext_images, weights)
         assert not np.isnan(result).any(), "Should handle zero weights without NaN"

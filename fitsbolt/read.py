@@ -22,9 +22,10 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from astropy.io import fits
 
-from fitsbolt.cfg.create_config import create_config
-from fitsbolt.cfg.create_config import SUPPORTED_IMAGE_EXTENSIONS
-from fitsbolt.cfg.logger import logger
+from .cfg.create_config import create_config
+from .cfg.create_config import SUPPORTED_IMAGE_EXTENSIONS
+from .cfg.logger import logger
+from .channel_mixing import apply_channel_combination, convert_greyscale_to_nchannels
 
 
 def read_images(
@@ -257,7 +258,7 @@ def _read_multi_fits_image(filepaths, fits_extensions, cfg):
     # Combine the images into n_output channels
     original_dtype = extension_images[0].dtype if extension_images else None
     if cfg.channel_combination is not None:
-        image = _apply_channel_combination(
+        image = apply_channel_combination(
             extension_images,
             cfg.channel_combination,
             original_dtype,
@@ -419,7 +420,7 @@ def _read_image(filepath, cfg):
                     # Do a linear combination based on the configuration
                     original_dtype = extension_images[0].dtype if extension_images else None
                     if cfg.channel_combination is not None:
-                        image = _apply_channel_combination(
+                        image = apply_channel_combination(
                             extension_images,
                             cfg.channel_combination,
                             original_dtype,
@@ -528,7 +529,7 @@ def _read_image(filepath, cfg):
         image = np.transpose(image, (1, 2, 0))
 
     # check if there is a greyscale image or an RGBA image that needs to be converted to RGB
-    image = _convert_greyscale_to_nchannels(
+    image = convert_greyscale_to_nchannels(
         image,
         n_output_channels=cfg.n_output_channels,
     )
@@ -551,76 +552,4 @@ def _read_image(filepath, cfg):
         if image.size == 0:
             logger.error(f"Image from {filepath} is empty (size 0)")
             raise ValueError(f"Image from {filepath} is empty (size 0)")
-    return image
-
-
-def _apply_channel_combination(
-    extension_images, channel_combination, original_dtype=None, force_dtype=True
-):
-    """Applies channel combination to the given extension images.
-
-    Args:
-        extension_images (list): list of extension images of shape (H, W), list length = n_fits_extensions.
-        channel_combination (numpy.ndarray): Array of channel combination weights (n_output_channels, n_fits_extensions).
-        original_dtype (numpy.dtype, optional): Original dtype of the input images.
-        force_dtype (bool, optional): If True, forces the output to maintain the original dtype. Defaults to True.
-
-    Returns:
-        numpy.ndarray: Combined image (n_output_channels,H, W).
-    """
-    weights = channel_combination  # Shape: (n_output_channels, n_fits_extensions)
-
-    # Normalize weights to avoid division by zero
-    row_sums = np.sum(weights, axis=1, keepdims=True)
-    # Replace zero sums with 1 to avoid division by zero
-    row_sums[row_sums == 0] = 1
-    weights = weights / row_sums
-
-    # Perform dot product along channel dimension
-    result = np.tensordot(
-        weights, extension_images, axes=1
-    )  # n_ouput,n_input x (n_input, H, W) -> (n_output, H, W) ?
-
-    # Force dtype if requested and original dtype is provided
-    if force_dtype and original_dtype is not None and result.dtype != original_dtype:
-        # Ensure the result stays within the valid range for the target dtype
-        if original_dtype == np.uint8:
-            result = np.clip(result, 0, 255).astype(original_dtype)
-        elif original_dtype == np.uint16:
-            result = np.clip(result, 0, 65535).astype(original_dtype)
-        elif original_dtype in [np.int8, np.int16, np.int32, np.int64]:
-            info = np.iinfo(original_dtype)
-            result = np.clip(result, info.min, info.max).astype(original_dtype)
-        elif original_dtype in [np.float16, np.float32, np.float64]:
-            result = result.astype(original_dtype)
-        else:
-            result = result.astype(original_dtype)
-    return result
-
-
-def _convert_greyscale_to_nchannels(image, n_output_channels):
-    """
-    Convert a grayscale image to a specified number of channels.
-    This function provides some backwards compatibility
-    Args:
-        image (numpy.ndarray): Grayscale image array (H,W,C or H,W)
-        n_output_channels (int): Number of output channels
-    Returns:
-        numpy.ndarray: Image with the specified number of channels (H,W,n_output_channels)
-    """
-    # Handle grayscale images
-    if len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
-        if n_output_channels != 1:
-            image = np.stack((np.squeeze(image),) * n_output_channels, axis=-1)
-        else:
-            # always return a 2D image if n_output_channels is 1
-            image = image[:, :, 0] if len(image.shape) == 3 else image
-
-    # if e.g. rgb (n_output_channels == 3) is requested but an rgba png is loaded
-    # Handle e.g. RGBA images (for png, tiff support)
-    if len(image.shape) == 3 and image.shape[2] > n_output_channels:
-        logger.trace(
-            "Image is in RGBA format. Converting to RGB by dropping the excess (e.g. alpha) channels."
-        )
-        image = image[:, :, :n_output_channels]
     return image
