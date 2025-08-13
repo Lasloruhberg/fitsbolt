@@ -484,7 +484,7 @@ class TestImageIO:
                 os.path.join(self.test_dir, "multi_channel.fits"),
                 fits_extension=[0, 1, 2, 3, 4],
                 n_output_channels=3,
-                channel_comb=channel_comb,
+                channel_combination=channel_comb,
             )
 
         # Try with the extensions that actually exist
