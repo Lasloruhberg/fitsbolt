@@ -80,10 +80,12 @@ class TestWrapperFunctionEdgeCases:
         # The scenario where return_single=True but len(results) > 1 and we want the first one
         file_paths = [self.rgb_path, self.gray_path]  # Valid files that will load
 
-        # Simulate by calling read_images - it should handle this case
-        results = read_images(file_paths, show_progress=False)
-        assert isinstance(results, list), "Multiple files should return list"
-        assert len(results) == 2, "Should return both images"
+        # Simulate by calling read_images - it should raise an error with the grayscale
+        with pytest.raises(AssertionError, match="Unexpected number of channels: 1"):
+            read_images(file_paths, show_progress=False)
+        file_paths = [self.gray_path, self.rgb_path]  # Valid files that will load
+        with pytest.raises(AssertionError, match="Unexpected number of channels: 3"):
+            read_images(file_paths, show_progress=False)
 
     def testconvert_greyscale_to_nchannels_function(self):
         """Test the convert_greyscale_to_nchannels function directly."""
@@ -216,18 +218,9 @@ class TestWrapperFunctionEdgeCases:
         assert result.shape[:2] == (32, 32), "Should use cfg size"
         assert result.shape[2] == 3, "Should have 3 channels"
 
-    def test_load_and_process_images_single_file_multiple_loaded_warning(self):
-        """Test the specific warning case in load_and_process_images."""
-        # This tests the case where return_single=True but multiple results are loaded
-        # This can happen in edge cases where files are processed differently
-
-        # Use multiple files to test the scenario
-        results = load_and_process_images([self.rgb_path, self.gray_path], show_progress=False)
-        assert len(results) == 2, "Should load both files"
-
     def test_read_images_with_show_progress_true(self):
         """Test read_images with progress bar enabled."""
-        file_paths = [self.rgb_path, self.gray_path]
+        file_paths = [self.rgb_path, self.rgb_path]
         results = read_images(file_paths, show_progress=True, desc="Testing progress")
 
         assert len(results) == 2, "Should return 2 images"
@@ -394,21 +387,23 @@ class TestWrapperFunctions:
 
     def test_read_images_multiple_files(self):
         """Test read_images with multiple file paths."""
-        file_paths = [self.rgb_path, self.gray_path, self.rgba_path]
-        results = read_images(file_paths, show_progress=False)
+        file_paths = [self.rgba_path, self.rgba_path, self.rgba_path]
+        results = read_images(
+            file_paths, n_output_channels=4, show_progress=False, force_dtype=True
+        )
 
-        assert isinstance(results, list), "Multiple files should return list"
+        assert isinstance(results, np.ndarray), "Multiple files should return list"
         assert len(results) == 3, "Should return all 3 images"
         for result in results:
             assert isinstance(result, np.ndarray), "Each result should be an array"
-            assert result.shape[2] == 3, "Should have 3 channels by default"
+            assert result.shape[2] == 4, "Should have 4 channels by default"
             assert (
                 result.dtype == np.uint8
             ), "PNG images should maintain uint8 dtype with force_dtype=True"
 
     def test_read_images_with_parameters(self):
         """Test read_images with custom parameters."""
-        file_paths = [self.rgb_path, self.gray_path]
+        file_paths = [self.gray_path, self.gray_path]
         results = read_images(
             file_paths,
             n_output_channels=3,
@@ -431,7 +426,8 @@ class TestWrapperFunctions:
 
         assert len(results) == 2, "Should return 2 images"
         for result in results:
-            assert result.ndim == 2, "Should be 2D for single channel"
+            assert result.ndim == 3, "Should be 3D with 1 channel with a 2 image for single channel"
+            assert result.shape[-1] == 1, "Should be a 2D image - 1 channel"
             assert np.issubdtype(result.dtype, np.floating), "FITS data should be float"
 
     def test_read_images_error_handling(self):
@@ -645,13 +641,6 @@ class TestWrapperFunctions:
 
         with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
             load_and_process_images(mixed_paths, show_progress=False)
-
-    def test_load_and_process_images_warning_single_request_multiple_results(self):
-        """Test warning when single file requested but multiple results returned."""
-        # This edge case might happen in error scenarios, testing the warning path
-        # We'll use valid multiple files to simulate this scenario
-        results = load_and_process_images([self.rgb_path, self.gray_path], show_progress=False)
-        assert len(results) == 2, "Should load multiple files successfully"
 
     def test_normalise_images_comprehensive_dtype_combinations(self):
         """Test normalise_images with all normalization methods and all input/output dtype combinations."""

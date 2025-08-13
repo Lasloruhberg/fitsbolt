@@ -581,7 +581,7 @@ def _read_image(filepath, cfg):
         # Grayscale image (1 channel)
         assert 1 in n_expected_channels, (
             "Unexpected number of channels: 1 (grayscale),"
-            + f"expected one of {n_expected_channels} from fits_extensions - {filepath}"
+            + f"expected one of {n_expected_channels} from other files/ fits_extension - {filepath}"
         )
         # If the image is 2D and we expect 1 channel, we can add a channel dimension to make H,W,1
         image = image[..., np.newaxis]
@@ -589,7 +589,7 @@ def _read_image(filepath, cfg):
         # Multi-channel image
         assert image.shape[2] in n_expected_channels, (
             f"Unexpected number of channels: {image.shape[2]},"
-            + f"expected one of {n_expected_channels} from fits_extensions - {filepath}"
+            + f"expected one of {n_expected_channels} from other files/ fits_extension - {filepath}"
         )
     if not cfg.get("n_expected_channels"):
         cfg.n_expected_channels = [image.shape[2]]
