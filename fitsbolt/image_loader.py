@@ -113,9 +113,9 @@ def load_and_process_images(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
-    norm_mtf_percentile=99.8,
-    norm_mtf_desired_mean=0.2,
-    norm_mtf_crop=None,
+    norm_midtones_percentile=99.8,
+    norm_midtones_desired_mean=0.2,
+    norm_midtones_crop=None,
     desc="Loading images",
     show_progress=True,
     log_level="WARNING",
@@ -164,10 +164,11 @@ def load_and_process_images(
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
 
         Default MTF settings:
-            norm_mtf_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.]. Defaults to 99.8.
-            norm_mtf_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
-            norm_mtf_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
-                                            Defaults to None.
+            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Defaults to 99.8.
+            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
+                                                  Defaults to None.
 
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
@@ -226,9 +227,9 @@ def load_and_process_images(
             norm_zscale_min_pixels=norm_zscale_min_pixels,
             norm_zscale_krej=norm_zscale_krej,
             norm_zscale_max_iter=norm_zscale_max_iter,
-            norm_mtf_percentile=norm_mtf_percentile,
-            norm_mtf_desired_mean=norm_mtf_desired_mean,
-            norm_mtf_crop=norm_mtf_crop,
+            norm_midtones_percentile=norm_midtones_percentile,
+            norm_midtones_desired_mean=norm_midtones_desired_mean,
+            norm_midtones_crop=norm_midtones_crop,
             log_level=log_level,
         )
     else:

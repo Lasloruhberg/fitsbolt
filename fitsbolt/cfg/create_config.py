@@ -47,9 +47,9 @@ def create_config(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
-    norm_mtf_percentile=99.8,
-    norm_mtf_desired_mean=0.2,
-    norm_mtf_crop=None,
+    norm_midtones_percentile=99.8,
+    norm_midtones_desired_mean=0.2,
+    norm_midtones_crop=None,
     log_level="WARNING",
     force_dtype=True,
 ):
@@ -92,10 +92,11 @@ def create_config(
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
 
         Default MTF settings:
-            norm_mtf_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.]. Defaults to 99.8.
-            norm_mtf_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
-            norm_mtf_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
-                                            Defaults to None.
+            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Defaults to 99.8.
+            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
+                                                    Defaults to None.
 
         log_level (str, optional): Logging level. Defaults to "SUCCESS".
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
@@ -148,10 +149,10 @@ def create_config(
     # MTF settings
     cfg.normalisation.mtf = DotMap()
     # float, in ]0., 100.] : percentile for MTF applied to each channel
-    cfg.normalisation.mtf.percentile = norm_mtf_percentile
+    cfg.normalisation.midtones.percentile = norm_midtones_percentile
     # float in [0,1], desired mean for MTF
-    cfg.normalisation.mtf.desired_mean = norm_mtf_desired_mean
-    cfg.normalisation.mtf.crop = norm_mtf_crop
+    cfg.normalisation.midtones.desired_mean = norm_midtones_desired_mean
+    cfg.normalisation.midtones.crop = norm_midtones_crop
 
     # FITS file handling settings
     # Extension(s) to use when loading FITS files (can be int, string, or list of int/string)
@@ -263,9 +264,9 @@ def _return_required_and_optional_keys():
         "normalisation.zscale.krej": [float, 0.0001, None, True, None],
         "normalisation.zscale.max_iterations": [int, 1, 100, True, None],
         "normalisation.mtf": ["special_DotMap", None, None, True, None],
-        "normalisation.mtf.percentile": [float, 0.0, 100.0, True, None],
-        "normalisation.mtf.desired_mean": [float, 0.0, 1.0, True, None],
-        "normalisation.mtf.crop": ["special_crop", None, None, True, None],
+        "normalisation.midtones.percentile": [float, 0.0, 100.0, True, None],
+        "normalisation.midtones.desired_mean": [float, 0.0, 1.0, True, None],
+        "normalisation.midtones.crop": ["special_crop", None, None, True, None],
     }
 
     return config_spec
