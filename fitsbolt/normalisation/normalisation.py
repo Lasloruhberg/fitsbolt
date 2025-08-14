@@ -93,7 +93,7 @@ def _compute_max_value(data, cfg=None):
         ), f"Crop size must be positive integers currently {cfg.normalisation.crop_for_maximum_value}"
         # make cutout of the image and compute max value
         img_centre_region = _crop_center(data, h, w)
-        max_value = np.max(img_centre_region)
+        max_value = np.nanmax(img_centre_region)
 
     else:
         # Compute the maximum value of the image
@@ -135,6 +135,7 @@ def _log_normalisation(data, cfg):
             otherwise set to 0 or cfg.normalisation.minimum_value if set
             cfg.normalisation.crop_for_maximum_value (Tuple[int, int], optional): Width and height to crop around the center,
             to calculate the maximum value in
+            cfg.normalisation.log_scale_a (float): a parameter of astropys log stretch, default 1000.0
             cfg.output_dtype: The desired output data type
 
     Returns:
@@ -150,12 +151,54 @@ def _log_normalisation(data, cfg):
 
     maximum = _compute_max_value(data, cfg=cfg)
     if minimum < maximum:
-        norm = ImageNormalize(data, vmin=minimum, vmax=maximum, stretch=LogStretch(), clip=True)
+        norm = ImageNormalize(
+            data,
+            vmin=minimum,
+            vmax=maximum,
+            stretch=LogStretch(a=cfg.normalisation.log_scale_a),
+            clip=True,
+        )
     else:
         warnings.warn("Image maximum is not larger than minimum, using linear normalisation")
-        norm = ImageNormalize(data, vmin=None, vmax=None, stretch=LogStretch(), clip=True)
+        norm = ImageNormalize(
+            data,
+            vmin=None,
+            vmax=None,
+            stretch=LogStretch(a=cfg.normalisation.log_scale_a),
+            clip=True,
+        )
     img_normalised = norm(data)  # range 0,1
     # Convert back to uint8 range
+    return _type_conversion(img_normalised, cfg)
+
+
+def _linear_normalisation(data, cfg):
+    """A linear normalisation
+
+    Args:
+        data (numpy array): Input image array, ideally a float32 or float64 array, can be high dynamic range
+        cfg (DotMap or None): Configuration with optional normalisation values.
+            cfg.normalisation.log_calculate_minimum_value (bool): If True, calculate the minimum value of the image,
+            otherwise set to 0 or cfg.normalisation.minimum_value if set
+            cfg.normalisation.crop_for_maximum_value (Tuple[int, int], optional): Width and height to crop around the center,
+            to calculate the maximum value in
+            cfg.output_dtype: The desired output data type
+
+    Returns:
+        numpy array: A normalised image in the specified output data type
+    """
+
+    minimum = _compute_min_value(data, cfg=cfg)
+    maximum = _compute_max_value(data, cfg=cfg)
+    if minimum < maximum:
+        norm = ImageNormalize(data, vmin=minimum, vmax=maximum, stretch=LinearStretch(), clip=True)
+    else:
+        warnings.warn(
+            "Image maximum is not larger than minimum, only doing conversion normalisation"
+        )
+        return _conversiononly_normalisation(data, cfg)
+    img_normalised = norm(data)  # range 0,1
+    # Convert back to type range
     return _type_conversion(img_normalised, cfg)
 
 
@@ -174,7 +217,19 @@ def _zscale_normalisation(data, cfg):
         return _conversiononly_normalisation(data, cfg)
 
     # Min Max value do not apply, also no constrain to center
-    norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=LinearStretch(), clip=True)
+    norm = ImageNormalize(
+        data,
+        interval=ZScaleInterval(
+            n_samples=cfg.normalisation.zscale.n_samples,
+            contrast=cfg.normalisation.zscale.contrast,
+            max_reject=cfg.normalisation.zscale.max_reject,
+            min_npixels=cfg.normalisation.zscale.min_npixels,
+            krej=cfg.normalisation.zscale.krej,
+            max_iterations=cfg.normalisation.zscale.max_iterations,
+        ),
+        stretch=LinearStretch(),
+        clip=True,
+    )
     img_normalised = norm(data)  # range 0,1
     if np.max(img_normalised) > np.min(img_normalised):
         # Convert back to specified dtype
@@ -200,7 +255,7 @@ def _conversiononly_normalisation(data, cfg):
         numpy array: A converted image in the specified output dtype any float output will be between [0,1]
     """
     # If input dtype already matches the requested output dtype and it's float32,
-    # we still need to ensure it's normalized to [0,1] range
+    # we still need to ensure it's normalised to [0,1] range
     # For any other case, use normalised conversion (e.g. for input floats)
 
     # get min or max from config if available
@@ -340,6 +395,108 @@ def _asinh_normalisation(data, cfg):
         return _conversiononly_normalisation(data, cfg=cfg)
 
 
+def _apply_midtones_on_normalised_data(x, m):
+    """Apply the midtones normalisation
+
+    Args:
+        x (np.ndarray): The input image data.
+        m (float): The midtones balance parameter.
+
+    Returns:
+        np.ndarray: The transformed image data.
+    """
+
+    assert x.max() <= 1
+    assert x.min() >= 0
+    Zero_mask = x == 0
+    Midtones_mask = x == m
+    Full_mask = x == 1
+    mask_else = ~(Zero_mask | Midtones_mask | Full_mask)
+
+    # create an output array that keeps some fixed values
+    output = np.zeros_like(x)
+    output[Zero_mask] = 0
+    output[Midtones_mask] = 0.5
+    output[Full_mask] = 1
+    x_else = x[mask_else]
+
+    # apply the curve
+    output[mask_else] = ((m - 1) * x_else) / ((2 * m - 1) * x_else - m)
+    output = np.nan_to_num(output, nan=0.0, posinf=1.0, neginf=0.0)  # ensure no NaNs or infs
+    return output
+
+
+def _find_mean_of_normalised(normalised_data, cfg):
+    """Find the midtones balance parameter m for the given normalised data."""
+    if cfg.normalisation.midtones.crop is not None:
+        h, w = cfg.normalisation.midtones.crop
+        assert (
+            h > 0 and w > 0
+        ), f"Crop size must be positive integers currently {cfg.normalisation.midtones.crop}"
+        # make cutout of the image and compute max value
+        normalised_data_cut = _crop_center(normalised_data, h, w)
+    else:
+        normalised_data_cut = normalised_data
+    x = np.mean(normalised_data_cut)
+    alpha = cfg.normalisation.midtones.desired_mean
+    return (x - alpha * x) / (x - 2 * alpha * x + alpha)
+
+
+def _midtones_normalisation(data, cfg):
+    """Compute the Midtones Transfer Function (MTF) for given x and m.
+    This is similar to the "curves" tool from image editing software,
+    m sets the curve and MTF is the application of the curve.
+
+    Args:
+        x (np.ndarray): The input image data.
+        m (float): The midtones balance parameter.
+
+    Returns:
+        np.ndarray: The transformed image data.
+    """
+    # Get initial min and max and clip values if manual are set
+    max_value = _compute_max_value(data, cfg)
+    min_value = _compute_min_value(data, cfg)
+    data = np.clip(data, min_value, max_value)
+
+    data_is_2d = False
+    if data.ndim == 2:
+        # create dummy channel index
+        data_is_2d = True
+        data = np.expand_dims(data, axis=-1)
+    # create a for loop over the channel to calculate m and apply MTF on a channel basis
+    for c in range(data.shape[-1]):
+        # do a channel-wise percentile clip
+        if cfg.normalisation.midtones.percentile:
+            data[..., c] = np.clip(
+                data[..., c],
+                data[..., c].min(),
+                np.percentile(data[..., c], cfg.normalisation.midtones.percentile),
+            )
+        # Find the appropriate midtones balance parameter m
+        max_value = _compute_max_value(data[..., c], cfg)
+        min_value = _compute_min_value(data[..., c], cfg)
+        normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
+
+        m = _find_mean_of_normalised(normalised_channel, cfg)
+        # Apply the MTF to the image
+        transformed_channel = _apply_midtones_on_normalised_data(normalised_channel, m)
+
+        data[..., c] = transformed_channel
+    if data_is_2d:
+        data = np.squeeze(data, axis=-1)
+    # scale entire image to 0,1 and do type conversion
+    max_value = _compute_max_value(data, cfg)
+    min_value = _compute_min_value(data, cfg)
+    if min_value < max_value:
+        return _type_conversion((data - min_value) / (max_value - min_value), cfg)
+    else:
+
+        warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
+
+        return _conversiononly_normalisation(data, cfg=cfg)
+
+
 def _normalise_image(data, cfg):
     """Normalises all images based on the selected normalisation option
 
@@ -370,12 +527,16 @@ def _normalise_image(data, cfg):
     # execute normalisations based on enum
     if method == NormalisationMethod.LOG:
         return _log_normalisation(data, cfg=cfg)
+    if method == NormalisationMethod.LINEAR:
+        return _linear_normalisation(data, cfg=cfg)
     elif method == NormalisationMethod.CONVERSION_ONLY:
         return _conversiononly_normalisation(data, cfg=cfg)
     elif method == NormalisationMethod.ZSCALE:
         return _zscale_normalisation(data, cfg=cfg)
     elif method == NormalisationMethod.ASINH:
         return _asinh_normalisation(data, cfg=cfg)
+    elif method == NormalisationMethod.MIDTONES:
+        return _midtones_normalisation(data, cfg=cfg)
     else:
         logger.critical(f"Normalisation method {method} not implemented")
         return _conversiononly_normalisation(data, cfg=cfg)
@@ -388,10 +549,20 @@ def normalise_images(
     num_workers=4,
     norm_maximum_value=None,
     norm_minimum_value=None,
-    norm_log_calculate_minimum_value=False,
     norm_crop_for_maximum_value=None,
+    norm_log_calculate_minimum_value=False,
+    norm_log_scale_a=1000.0,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
+    norm_zscale_n_samples=1000,
+    norm_zscale_contrast=0.25,
+    norm_zscale_max_reject=0.5,
+    norm_zscale_min_pixels=5,
+    norm_zscale_krej=2.5,
+    norm_zscale_max_iter=5,
+    norm_midtones_percentile=99.8,
+    norm_midtones_desired_mean=0.2,
+    norm_midtones_crop=None,
     desc="Normalising images",
     show_progress=True,
     log_level="WARNING",
@@ -399,21 +570,40 @@ def normalise_images(
     """Load and process multiple images in parallel.
 
     Args:
-        images (list): image or list of images to normalise
+        images (list): image or list of images(H,W) or (H,W,C) to normalise
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
         normalisation_method (NormalisationMethod, optional): Normalisation method to use.
                                                 Defaults to NormalisationMethod.CONVERSION_ONLY.
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
-        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None.
-        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None.
-        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
-                                                (normally defaults to 0). Defaults to False.
-        norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
-                                            should have the length of n_channels or 1. Defaults to [0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
-                                            should have the length of n_channels or 1. Defaults to [99.8].
-        filepaths (list): List of image filepaths to load
+        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None implying dynamic.
+        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None implying dynamic.
+        norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
+                                    the maximum value inside. Defaults to None.
+        Default Log settings
+            norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
+                                Defaults to False.
+            norm_log_scale_a (float, optional): Scale factor for astropy log_stretch. Defaults to 1000.0.
+        Default Asinh settings
+            norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [0.7].
+            norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [99.8].
+        Default ZScale settings (from astropy ZScaleInterval):
+            norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
+            norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
+            norm_zscale_max_reject (float, optional): Maximum rejection fraction for zscale normalisation. Defaults to 0.5.
+            norm_zscale_min_pixels (int, optional): Minimum number of pixels that must remain after rejection
+                                                    for zscale normalisation. Defaults to 5.
+            norm_zscale_krej (float, optional): The number of sigma used for the rejection. Defaults to 2.5.
+            norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
+
+        Default MTF settings:
+            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Defaults to 99.8.
+            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
+                                                    Defaults to None.
+
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
@@ -423,28 +613,48 @@ def normalise_images(
         list: List of images for successfully normalised images
     """
     # check if input is a single image array or a list of images
-    if isinstance(images, np.ndarray) and images.ndim >= 2:
+    if isinstance(images, np.ndarray) and (images.ndim == 2 or images.ndim == 3):
         # Single image array
         return_single = True
+        n_output_channels = images.shape[-1] if images.ndim == 3 else 1
         images = [images]
     elif isinstance(images, list):
+        if len(images) == 0:
+            return []
         # List of images
         return_single = False
+        n_output_channels = images[0].shape[-1] if images[0].ndim == 3 else 1
+
+    elif isinstance(images, np.ndarray) and images.ndim == 4:
+        # provide support if user provises an array instead of a list
+        return_single = False
+        n_output_channels = images.shape[-1]
     else:
-        # Single non-array image (shouldn't happen in normal use)
-        return_single = True
-        images = [images]
+        raise ValueError(
+            f"Unsupported image format: {type(images)}, should be a list or a 2D, 3D array (single images) or a 4D array"
+        )
 
     cfg = create_config(
         output_dtype=output_dtype,
         normalisation_method=normalisation_method,
+        n_output_channels=n_output_channels,
         num_workers=num_workers,
         norm_maximum_value=norm_maximum_value,
         norm_minimum_value=norm_minimum_value,
         norm_log_calculate_minimum_value=norm_log_calculate_minimum_value,
+        norm_log_scale_a=norm_log_scale_a,
         norm_crop_for_maximum_value=norm_crop_for_maximum_value,
         norm_asinh_scale=norm_asinh_scale,
         norm_asinh_clip=norm_asinh_clip,
+        norm_zscale_n_samples=norm_zscale_n_samples,
+        norm_zscale_contrast=norm_zscale_contrast,
+        norm_zscale_max_reject=norm_zscale_max_reject,
+        norm_zscale_min_pixels=norm_zscale_min_pixels,
+        norm_zscale_krej=norm_zscale_krej,
+        norm_zscale_max_iter=norm_zscale_max_iter,
+        norm_midtones_percentile=norm_midtones_percentile,
+        norm_midtones_desired_mean=norm_midtones_desired_mean,
+        norm_midtones_crop=norm_midtones_crop,
         log_level=log_level,
     )
 

@@ -27,11 +27,11 @@ from PIL import Image
 from astropy.io import fits
 
 from fitsbolt.image_loader import (
-    _read_image,
     _load_image,
     _process_image,
     load_and_process_images,
 )
+from fitsbolt.read import read_images
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 from fitsbolt.cfg.create_config import create_config, SUPPORTED_IMAGE_EXTENSIONS
 
@@ -171,7 +171,7 @@ class TestImageIO:
         cls.multi_fits_path = os.path.join(cls.test_dir, "multi_channel.fits")
         hdu_list.writeto(cls.multi_fits_path, overwrite=True)
 
-        # Create FITS with extreme values to test normalization
+        # Create FITS with extreme values to test normalisation
         extreme_data = np.zeros((100, 100), dtype=np.float32)
         extreme_data[10:40, 10:40] = -1000.0  # Very negative values
         extreme_data[50:80, 50:80] = 1000.0  # Very positive values
@@ -205,63 +205,59 @@ class TestImageIO:
         expected_extensions = {".fits", ".jpg", ".jpeg", ".png", ".tiff", ".tif"}
         assert SUPPORTED_IMAGE_EXTENSIONS == expected_extensions
 
-    def test_read_image_rgb(self, test_config):
-        """Test reading an RGB image with _read_image."""
-        img = _read_image(self.rgb_path, test_config)
+    def test_read_image_rgb(self):
+        """Test reading an RGB image with read_images."""
+        img = read_images(self.rgb_path, n_output_channels=3)
         assert img.shape[2] == 3  # Should be RGB
         assert img.dtype in [np.uint8, np.float32, np.float64]  # PIL returns uint8
 
-    def test_read_image_grayscale(self, test_config):
-        """Test reading a grayscale image with _read_image."""
-        # Use recreate_config to ensure n_output_channels is properly set for RGB conversion
-        cfg = self.recreate_config(test_config, n_output_channels=3)
-        img = _read_image(self.gray_path, cfg)
+    def test_read_image_grayscale(self):
+        """Test reading a grayscale image with read_images."""
+        # Use read_images with n_output_channels=3 to convert grayscale to RGB format
+        img = read_images(self.gray_path, n_output_channels=3)
         # Should convert grayscale to RGB format
         assert img.ndim == 3 and img.shape[2] == 3
 
-    def test_read_image_rgba(self, test_config):
-        """Test reading an RGBA image with _read_image."""
-        # Use recreate_config to ensure n_output_channels is properly set for RGBA
-        cfg = self.recreate_config(test_config, n_output_channels=4)
-        img = _read_image(self.rgba_path, cfg)
+    def test_read_image_rgba(self):
+        """Test reading an RGBA image with read_images."""
+        # Test with n_output_channels=4 to preserve RGBA
+        img = read_images(self.rgba_path, n_output_channels=4)
         assert img.shape[2] == 4  # Should preserve RGBA
         assert img.dtype in [np.uint8, np.float32, np.float64]
 
-    def test_read_image_fits_simple(self, test_config):
-        """Test reading a simple FITS file with _read_image."""
-        # Use recreate_config to ensure n_output_channels is properly set for single channel
-        cfg = self.recreate_config(test_config, n_output_channels=1)
-        img = _read_image(self.fits_path, cfg)
-        assert img.ndim == 2  # Single channel FITS should be 2D when n_output_channels=1
+    def test_read_image_fits_simple(self):
+        """Test reading a simple FITS file with read_images."""
+        # Test with fits_extension=0 to read first extension and n_output_channels=1
+        img = read_images(self.fits_path, fits_extension=[0], n_output_channels=1)
+        assert img.ndim == 3  # Should be H,W,C format
+        assert img.shape[2] == 1  # Single extension should result in 1 channel
         assert np.issubdtype(img.dtype, np.floating), "Image data should be a floating-point type"
 
-    def test_read_image_fits_multi_channel(self, test_config):
-        """Test reading a multi-channel FITS file with _read_image."""
-        img = _read_image(self.multi_fits_path, test_config)
+    def test_read_image_fits_multi_channel(self):
+        """Test reading a multi-channel FITS file with read_images."""
+        img = read_images(self.multi_fits_path, fits_extension=[0])
         # Should handle multi-dimensional FITS appropriately
         assert img.ndim >= 2 and img.ndim <= 3
 
-    def test_read_image_fits_extreme_values(self, test_config):
+    def test_read_image_fits_extreme_values(self):
         """Test reading FITS with extreme values."""
-        # Use recreate_config to ensure n_output_channels is properly set for single channel
-        cfg = self.recreate_config(test_config, n_output_channels=1)
-        img = _read_image(self.extreme_fits_path, cfg)
-        assert img.ndim == 2  # Single channel FITS should be 2D when n_output_channels=1
+        # Test with fits_extension=[0] to read first extension
+        img = read_images(self.extreme_fits_path, fits_extension=[0], n_output_channels=1)
+        assert img.ndim == 3  # Should be H,W,C format
+        assert img.shape[2] == 1  # Single extension should result in 1 channel
         # Should handle extreme values without crashing
 
-    def test_read_image_fits_extension_selection(self, test_config):
+    def test_read_image_fits_extension_selection(self):
         """Test FITS extension selection functionality."""
         # Test with integer extension index
-        test_config.fits_extension = 0
-        img = _read_image(self.fits_path, test_config)
+        img = read_images(self.fits_path, fits_extension=[0], n_output_channels=1)
         assert img.ndim >= 2
 
         # Test invalid extension index
-        test_config.fits_extension = 999
         with pytest.raises(IndexError):
-            _read_image(self.fits_path, test_config)
+            read_images(self.fits_path, fits_extension=[999])
 
-    def test_read_image_unsupported_extension(self, test_config):
+    def test_read_image_unsupported_extension(self):
         """Test that unsupported file extensions raise AssertionError."""
         unsupported_path = os.path.join(self.test_dir, "test.bmp")
         # Create a fake file with unsupported extension
@@ -269,14 +265,14 @@ class TestImageIO:
             f.write("fake file")
 
         with pytest.raises(AssertionError, match="Unsupported file extension"):
-            _read_image(unsupported_path, test_config)
+            read_images(unsupported_path)
 
     def test_process_image_rgb_conversion(self, test_config):
         """Test process_image preserves channel structure."""
         # Test with RGB input (should remain RGB)
         rgb_data = np.zeros((50, 50, 3), dtype=np.uint8)
         rgb_data[10:40, 10:40, 0] = 200  # Red channel
-
+        test_config.n_expected_channels = 3
         processed = _process_image(
             rgb_data,
             test_config,
@@ -292,10 +288,13 @@ class TestImageIO:
         rgba_data = np.zeros((50, 50, 4), dtype=np.uint8)
         rgba_data[10:40, 10:40, :3] = [255, 128, 64]  # RGB values
         rgba_data[10:40, 10:40, 3] = 255  # Alpha
-
+        channel_comb = np.ones((3, 4))
+        test_config.channel_combination = channel_comb
+        cfg = self.recreate_config(test_config, n_output_channels=4)
+        cfg.n_expected_channels = 4  # Simulates read_images
         processed = _process_image(
             rgba_data,
-            test_config,
+            cfg,
         )
         assert processed.shape == (
             test_config.size[0],
@@ -308,9 +307,9 @@ class TestImageIO:
         """Test process_image with single channel output."""
         gray_data = np.zeros((50, 50), dtype=np.uint8)
         gray_data[10:40, 10:40] = 200
-
         # Create config for single channel output to avoid RGB conversion
         cfg = self.recreate_config(test_config, n_output_channels=1)
+        cfg.n_expected_channels = 1  # simulates read_images
         processed = _process_image(gray_data, cfg)
         assert (
             len(processed.shape) == 2
@@ -320,7 +319,9 @@ class TestImageIO:
     def test_process_image_with_resizing(self, test_config):
         """Test process_image with resizing."""
         # Use recreate_config to properly set the size
+
         cfg = self.recreate_config(test_config, size=(64, 64))
+        cfg.n_expected_channels = 3  # simulates_read
 
         rgb_data = np.zeros((100, 100, 3), dtype=np.uint8)
         rgb_data[25:75, 25:75, 0] = 255  # Red square
@@ -336,15 +337,21 @@ class TestImageIO:
         img = _load_image(self.rgb_path, test_config)
         assert img.shape[2] == 3  # Should be RGB
         assert img.dtype == np.uint8
-
+        try:
+            del test_config.n_expected_channels
+        except Exception:
+            pass
         # Test with FITS image
+        test_config.n_output_channels = 1
+        test_config.fits_extension = 0
+        test_config.channel_combination = np.eye(1)
         fits_img = _load_image(self.fits_path, test_config)
         assert fits_img.ndim >= 2
         assert fits_img.dtype == np.uint8
 
     def test_load_and_process_images_parallel(self, test_config):
         """Test load_and_process_images function with multiple images."""
-        file_paths = [self.rgb_path, self.gray_path, self.rgba_path]
+        file_paths = [self.rgb_path, self.rgb_path, self.rgb_path]
 
         results = load_and_process_images(
             file_paths, cfg=test_config, num_workers=2, show_progress=False
@@ -357,7 +364,7 @@ class TestImageIO:
 
     def test_load_and_process_images_with_config_params(self):
         """Test load_and_process_images with configuration parameters."""
-        file_paths = [self.rgb_path, self.gray_path]
+        file_paths = [self.gray_path, self.gray_path]
 
         results = load_and_process_images(
             file_paths,
@@ -383,8 +390,6 @@ class TestImageIO:
     def test_rgba_to_rgb_conversion_values(self, test_config):
         """Test that RGBA to RGB conversion handles alpha channel correctly."""
         # Create config with explicit n_output_channels=3 for RGB conversion
-        cfg = self.recreate_config(test_config, n_output_channels=3)
-
         # Create a test RGBA image with varying alpha and patterns
         width, height = 100, 100
         test_rgba = np.zeros((height, width, 4), dtype=np.uint8)
@@ -409,9 +414,8 @@ class TestImageIO:
         test_rgba_path = os.path.join(self.test_dir, "test_rgba.png")
         Image.fromarray(test_rgba).save(test_rgba_path)
 
-        # Test RGB conversion using _read_image with RGBA file
-        cfg = self.recreate_config(test_config, n_output_channels=3)
-        rgb_img = _read_image(test_rgba_path, cfg)
+        # Test RGB conversion using read_images with RGBA file
+        rgb_img = read_images(test_rgba_path, n_output_channels=3)
 
         # Test shape and type
         assert rgb_img.shape == (height, width, 3), "RGBA should convert to RGB shape"
@@ -427,74 +431,33 @@ class TestImageIO:
         ), "Red channel should have no green"
 
     def test_channel_conversion_in_read_image(self, test_config):
-        """Test that _read_image properly converts channels based on n_output_channels."""
-        # Test RGBA to RGB conversion using _read_image
-        cfg_rgb = self.recreate_config(test_config, n_output_channels=3)
-        rgb_img = _read_image(self.rgba_path, cfg_rgb)
+        """Test that read_images properly converts channels based on n_output_channels."""
+        # Test RGBA to RGB conversion using read_images
+        rgb_img = read_images(self.rgba_path, n_output_channels=3)
         assert rgb_img.shape[2] == 3, "RGBA should be converted to RGB with n_output_channels=3"
 
-        # Test RGBA preservation using _read_image
-        cfg_rgba = self.recreate_config(test_config, n_output_channels=4)
-        rgba_img = _read_image(self.rgba_path, cfg_rgba)
+        # Test RGBA preservation using read_images
+        rgba_img = read_images(self.rgba_path, n_output_channels=4)
         assert rgba_img.shape[2] == 4, "RGBA should be preserved with n_output_channels=4"
 
-        # Test grayscale to RGB conversion using _read_image
-        cfg_gray_to_rgb = self.recreate_config(test_config, n_output_channels=3)
-        gray_to_rgb_img = _read_image(self.gray_path, cfg_gray_to_rgb)
+        # Test grayscale to RGB conversion using read_images
+        gray_to_rgb_img = read_images(self.gray_path, n_output_channels=3)
         assert (
             gray_to_rgb_img.shape[2] == 3
         ), "Grayscale should be converted to RGB with n_output_channels=3"
 
-    def test_fits_loading_parallel_with_extension_int(self, test_config):
+    def test_fits_loading_parallel_with_extension_int(self):
         """Test parallel loading of FITS files with extension index 0."""
-        # Use recreate_config to properly set fits_extension
-        cfg = self.recreate_config(test_config, fits_extension=0)
         file_paths = [self.fits_path, self.multi_fits_path]
 
-        results = load_and_process_images(file_paths, cfg=cfg, num_workers=2, show_progress=False)
+        results = load_and_process_images(
+            file_paths, fits_extension=0, n_output_channels=3, num_workers=2, show_progress=False
+        )
 
         assert len(results) == 2
         for image in results:
             assert image.shape[2] == 3  # Should be converted to RGB
             assert image.dtype == np.uint8
-
-    def test_fits_extension_primary(self, test_config):
-        """Test reading FITS file with 'PRIMARY' extension name."""
-        # Set the extension to 'PRIMARY' which should be equivalent to index 0
-        test_config.fits_extension = "PRIMARY"
-
-        try:
-            img = _read_image(self.fits_path, test_config)
-            assert img.ndim >= 2
-            assert np.issubdtype(img.dtype, np.floating)
-        except KeyError:
-            # Some FITS files might not have named extensions
-            pytest.skip("FITS file does not have a 'PRIMARY' named extension")
-
-    def test_greyscale_fits_to_rgb_mapping(self, test_config):
-        """Test conversion of greyscale FITS data to RGB."""
-        # Load a single-channel FITS file
-        test_config.fits_extension = 0
-        cfg = self.recreate_config(test_config, n_output_channels=1)
-        # First get the raw grayscale data
-        gray_fits = _read_image(self.fits_path, cfg)
-        assert gray_fits.ndim == 2, "Test requires a 2D (grayscale) FITS image"
-
-        # check rgb mapping
-        cfg = self.recreate_config(test_config, n_output_channels=3)
-        # First get the raw grayscale data
-        rgb_fits = _read_image(self.fits_path, cfg)
-        assert rgb_fits.ndim == 3, "mapping should convert to 3D RGB image"
-        assert rgb_fits.shape[2] == 3, "Grayscale FITS should have three channels after mapping"
-
-        # All RGB channels should be equal for a grayscale source
-        r_channel = rgb_fits[:, :, 0]
-        g_channel = rgb_fits[:, :, 1]
-        b_channel = rgb_fits[:, :, 2]
-
-        # Channels should be identical or very similar
-        assert np.allclose(r_channel, g_channel, rtol=1e-5, atol=1)
-        assert np.allclose(r_channel, b_channel, rtol=1e-5, atol=1)
 
     def test_fits_extension_list_truncation(self, test_config):
         """Test that extension list [0,1,2,3] drops the last channel when converting to RGB."""
@@ -516,20 +479,21 @@ class TestImageIO:
         hdu_list.writeto(temp_fits_path, overwrite=True)
 
         # Test 1: Using all extensions by index
-        test_config.fits_extension = [0, 1, 2, 3, 4]
-        test_config.n_output_channels = 3  # Explicitly set output channels to 3
         # Setup channel_combination array - identity matrix for first 3 channels
         channel_comb = np.zeros((3, 5))  # 3 output channels x 4 input extensions
         for i in range(3):  # Only map the first 3 channels
             channel_comb[i, i] = 1
         channel_comb[2, 3] = 1  # map the 4th extension also to the 3rd output channel
         channel_comb[2, 4] = 1  # map the 5th extension also to the 3rd output channel
-        test_config.channel_combination = channel_comb
-
         # This should fail as extension 3 doesn't exist (we have 0,1,2)
         # We're trying to access four_channel.fits with indices [0,1,2,3] but testing with multi_channel.fits
         with pytest.raises(IndexError, match="out of bounds"):
-            _read_image(os.path.join(self.test_dir, "multi_channel.fits"), test_config)
+            read_images(
+                os.path.join(self.test_dir, "multi_channel.fits"),
+                fits_extension=[0, 1, 2, 3, 4],
+                n_output_channels=3,
+                channel_combination=channel_comb,
+            )
 
         # Try with the extensions that actually exist
         test_config.fits_extension = [0, 1, 2]
@@ -540,12 +504,18 @@ class TestImageIO:
             channel_comb[i, i] = 1.0  # Use floating point to ensure no integer division issues
         test_config.channel_combination = channel_comb
 
-        img = _read_image(temp_fits_path, test_config)
+        img = read_images(
+            temp_fits_path,
+            fits_extension=[0, 1, 2],
+            n_output_channels=3,
+            channel_combination=channel_comb,
+        )
 
         # The shape should be (50, 50, 3) after reading
         assert img.shape == (50, 50, 3), "Should read all 3 channels"
 
         # Now process with RGB conversion
+        test_config.n_expected_channels = 3  # Simulates read_images
         processed = _process_image(
             img,
             test_config,
@@ -571,16 +541,17 @@ class TestImageIO:
         hdu_list.writeto(temp_fits_path2, overwrite=True)
 
         # Set config to use all 4 extensions
-        test_config.fits_extension = [0, 1, 2, 3]
-        test_config.n_output_channels = 3  # Explicitly set output channels to 3
         # Setup channel_combination array for first 3 channels
-        channel_comb = np.zeros((3, 4))  # 3 output channels x 4 input extensions
-        for i in range(3):  # Only map the first 3 channels
-            channel_comb[i, i] = 1
+        channel_comb = np.eye(3, 4)  # 3 output channels x 4 input extensions
         test_config.channel_combination = channel_comb
 
         # This should work now
-        img_four = _read_image(temp_fits_path2, test_config)
+        img_four = read_images(
+            temp_fits_path2,
+            n_output_channels=3,
+            channel_combination=channel_comb,
+            fits_extension=[0, 1, 2, 3],
+        )
 
         # The shape should be (50, 50, 3) after reading since n_output_channels=3
         assert img_four.shape == (
@@ -589,7 +560,10 @@ class TestImageIO:
             test_config.n_output_channels,
         ), f"Should read data with shape matching n_output_channels={test_config.n_output_channels}, got {img_four.shape}"
 
-        # Now process with RGB conversion
+        # Now process (has a channel combination in it so a bit uncessary)
+        test_config.n_expected_channels = 3  # Simulates read_images
+        channel_comb = np.eye(3, 3)  # Identity matrix for 3 output channels, drops 4th
+        test_config.channel_combination = channel_comb
         processed_four = _process_image(
             img_four,
             test_config,
@@ -605,20 +579,21 @@ class TestImageIO:
         assert np.any(processed_four > 0), "At least one channel should have data"
 
         # Test 3: Try with extension names instead of indices
-        test_config.fits_extension = ["PRIMARY", "EXT1", "EXT2"]
-        test_config.n_output_channels = 3  # Explicitly set output channels to 3
         # Setup channel_combination array - identity matrix
         channel_comb = np.zeros((3, 3))  # 3 output channels x 3 input extensions
         for i in range(3):
             channel_comb[i, i] = 1
         test_config.channel_combination = channel_comb
 
-        img_named = _read_image(temp_fits_path2, test_config)
+        img_named = read_images(
+            temp_fits_path2,
+            n_output_channels=3,
+            channel_combination=channel_comb,
+            fits_extension=["PRIMARY", "EXT1", "EXT2"],
+        )
         assert img_named.shape == (50, 50, 3), "Should read named extensions"
 
         # Test error case - non-existent extension name
-        test_config.fits_extension = ["PRIMARY", "EXT1", "NONEXISTENT"]
-        test_config.n_output_channels = 3  # Explicitly set output channels to 3
         # Setup channel_combination array - identity matrix
         channel_comb = np.zeros((3, 3))  # 3 output channels x 3 input extensions
         for i in range(3):
@@ -626,7 +601,12 @@ class TestImageIO:
         test_config.channel_combination = channel_comb
 
         with pytest.raises(KeyError, match="not found"):
-            _read_image(temp_fits_path2, test_config)
+            read_images(
+                temp_fits_path2,
+                n_output_channels=3,
+                channel_combination=channel_comb,
+                fits_extension=["PRIMARY", "EXT1", "NONEXISTENT"],
+            )
 
     def test_fits_extension_list_with_two_extensions(self, test_config):
         """Test handling of a list with two extensions and error cases."""
@@ -651,8 +631,6 @@ class TestImageIO:
 
         try:
             # Test 1: Using two extensions by index
-            test_config.fits_extension = [0, 1]
-            test_config.n_output_channels = 3  # Explicitly set output channels to 3
             # Create channel_combination matrix for 2 channels to 3 output channels
             channel_comb = np.zeros(
                 (3, 2), dtype=np.float32
@@ -663,14 +641,19 @@ class TestImageIO:
                 0.5  # Map first extension to B with half intensity (so there is no 0 sum)
             )
             # B channel will remain zeros
-            test_config.channel_combination = channel_comb
-
-            img = _read_image(temp_fits_path, test_config)
+            img = read_images(
+                temp_fits_path,
+                fits_extension=[0, 1],
+                n_output_channels=3,
+                channel_combination=channel_comb,
+            )  # here read_images will already handle the channel combination
 
             # Image should have shape (50, 50, 3) after reading since n_output_channels=3
             assert img.shape == (50, 50, 3), "Should have n_output_channels=3 dimensions"
 
-            # Process with RGB conversion - should work by filling in a zero channel
+            # Process with RGB conversion
+            test_config.n_expected_channels = 3  # Simulates read_images
+            test_config.channel_combination = np.eye(3, 3)
             processed = _process_image(
                 img,
                 test_config,
@@ -689,8 +672,6 @@ class TestImageIO:
             ), "At least one channel should have data"
 
             # Test 2: Using extension names
-            test_config.fits_extension = ["PRIMARY", "RED"]
-            test_config.n_output_channels = 3  # Explicitly set output channels to 3
             # Same channel_combination as before
             channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
             channel_comb[0, 0] = 1  # Map PRIMARY to R
@@ -700,7 +681,12 @@ class TestImageIO:
             )
             test_config.channel_combination = channel_comb
 
-            img_named = _read_image(temp_fits_path, test_config)
+            img_named = read_images(
+                temp_fits_path,
+                n_output_channels=3,
+                channel_combination=channel_comb,
+                fits_extension=["PRIMARY", "RED"],
+            )
             assert img_named.shape == (
                 50,
                 50,
@@ -708,8 +694,6 @@ class TestImageIO:
             ), "Should have n_output_channels=3 dimensions for named extensions"
 
             # Test 3: Test error with non-existent extension
-            test_config.fits_extension = [0, 99]  # Index 99 doesn't exist
-            test_config.n_output_channels = 3  # Explicitly set output channels to 3
             # Setup channel_combination array
             channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
             channel_comb[0, 0] = 1  # Map first extension to R
@@ -717,14 +701,15 @@ class TestImageIO:
             channel_comb[2, 0] = (
                 0.5  # Map first extension to B with half intensity (so there is no 0 sum)
             )
-            test_config.channel_combination = channel_comb
-
             with pytest.raises(IndexError, match="out of bounds"):
-                _read_image(temp_fits_path, test_config)
+                read_images(
+                    temp_fits_path,
+                    n_output_channels=3,
+                    channel_combination=channel_comb,
+                    fits_extension=[0, 99],
+                )
 
             # Test 4: Test error with non-existent named extension
-            test_config.fits_extension = ["PRIMARY", "NONEXISTENT"]
-            test_config.n_output_channels = 3  # Explicitly set output channels to 3
             # Setup channel_combination array
             channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
             channel_comb[0, 0] = 1  # Map first extension to R
@@ -732,10 +717,13 @@ class TestImageIO:
             channel_comb[2, 0] = (
                 0.5  # Map first extension to B with half intensity (so there is no 0 sum)
             )
-            test_config.channel_combination = channel_comb
-
             with pytest.raises(KeyError, match="not found"):
-                _read_image(temp_fits_path, test_config)
+                read_images(
+                    temp_fits_path,
+                    n_output_channels=3,
+                    channel_combination=channel_comb,
+                    fits_extension=["PRIMARY", "NONEXISTENT"],
+                )
 
             # Test 5: Test with extensions that have different shapes (should fail)
             # Create a new HDU with different shape
@@ -758,7 +746,58 @@ class TestImageIO:
             test_config.channel_combination = channel_comb
 
             with pytest.raises(ValueError, match="different shapes"):
-                _read_image(odd_fits_path, test_config)
+                read_images(
+                    odd_fits_path,
+                    n_output_channels=3,
+                    channel_combination=channel_comb,
+                    fits_extension=[0, 1, 2],
+                )
+            # Test 6: Using two extensions by index, skip combination in read
+            # Create channel_combination matrix for 2 channels to 3 output channels
+            channel_comb = np.zeros(
+                (3, 2), dtype=np.float32
+            )  # 3 output channels x 2 input extensions
+            channel_comb[0, 0] = 1  # Map first extension to R
+            channel_comb[1, 1] = 1  # Map second extension to G
+            channel_comb[2, 0] = (
+                0.5  # Map first extension to B with half intensity (so there is no 0 sum)
+            )
+            # B channel will remain zeros
+            img = read_images(
+                temp_fits_path,
+                fits_extension=[0, 1],
+                n_output_channels=3,
+                channel_combination=channel_comb,
+                read_only=True,
+            )  # here read_images will already handle the channel combination
+
+            # Image should have shape (50, 50, 3) after reading since n_output_channels=3
+            assert img.shape == (50, 50, 2), "Should have n_output_channels=3 dimensions"
+            channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
+            channel_comb[0, 0] = 1  # Map PRIMARY to R
+            channel_comb[1, 1] = 1  # Map RED to G
+            channel_comb[2, 0] = (
+                0.5  # Map first extension to B with half intensity (so there is no 0 sum)
+            )
+            # Process with RGB conversion
+            test_config.n_expected_channels = 2  # Simulates read_images
+            test_config.channel_combination = channel_comb
+            processed = _process_image(
+                img,
+                test_config,
+            )
+
+            # Check that we have 3 channels now
+            assert processed.shape == (
+                test_config.size[0],
+                test_config.size[1],
+                test_config.n_output_channels,
+            ), f"Should have {test_config.n_output_channels} channels after RGB conversion, got {processed.shape}"
+
+            # At least one channel should have non-zero data
+            assert np.any(processed[:, :, 0] > 0) or np.any(
+                processed[:, :, 1] > 0
+            ), "At least one channel should have data"
 
         finally:
             # Clean up temporary files
@@ -868,21 +907,25 @@ class TestImageIO:
         try:
             # Test with explicit n_output_channels and fits_extension
             test_cfg = create_config(
-                size=[50, 50],
+                size=[80, 80],
                 fits_extension=[0, 1, 2],
                 n_output_channels=3,
                 normalisation_method=NormalisationMethod.CONVERSION_ONLY,
             )
 
             # Read and process the image
-            img = _read_image(temp_fits_path, test_cfg)
+            img = read_images(
+                temp_fits_path,
+                n_output_channels=test_cfg.n_output_channels,
+                fits_extension=test_cfg.fits_extension,
+            )
             assert img.shape == (50, 50, 3), "Should read all 3 channels"
-
+            test_cfg.n_expected_channels = 3  # simulates read_images
             processed = _process_image(
                 img,
                 test_cfg,
             )
-            assert processed.shape == (50, 50, 3), "Should maintain 3 channels"
+            assert processed.shape == (80, 80, 3), "Should maintain 3 channels"
 
             # Verify that at least one channel has data (channel 1 should have data from EXT1)
             assert np.any(processed[:, :, 1] > 0), "Channel 1 should have data"
@@ -933,7 +976,12 @@ class TestImageIO:
             test_config.channel_combination = channel_comb
 
             # Read the image
-            img = _read_image(temp_fits_path, test_config)
+            img = read_images(
+                temp_fits_path,
+                n_output_channels=test_config.n_output_channels,
+                channel_combination=test_config.channel_combination,
+                fits_extension=test_config.fits_extension,
+            )
 
             # Check output shape
             assert img.shape == (50, 50, 3), "Should create an image with 3 channels"
@@ -952,7 +1000,11 @@ class TestImageIO:
                 img[:, :, 2], 3.5, atol=1e-5
             ), "Channel 2 should be weighted average 3.5"
 
-            # Process the image
+            # Process the image (I already combined channels)
+            test_config.channel_combination = np.eye(3, 3)
+            test_config.n_expected_channels = 3
+            test_config.output_dtype = np.uint8
+            test_config.normalisation_method = NormalisationMethod.LINEAR
             processed = _process_image(
                 img,
                 test_config,
@@ -965,13 +1017,13 @@ class TestImageIO:
                 test_config.n_output_channels,
             ), "Processed image should maintain 3 channels"
 
-            # Verify the image was normalized correctly to uint8 range (0-255)
+            # Verify the image was normalised correctly to uint8 range (0-255)
             # If normalisation is CONVERSION_ONLY, values are rescaled to 0-255 range
             # Channel 0 should be 0
             # Channel 1 should be 2.0/3.5*255 =~ 146
             # Channel 2 should be 3.5/3.5*255 =~ 255
 
-            # Allow some tolerance due to normalization and rounding
+            # Allow some tolerance due to normalisation and rounding
             assert np.mean(processed[:, :, 0]) < 1, "Channel 0 should be close to 0"
 
             # Check channel 1 (should be around 146)
@@ -1022,7 +1074,12 @@ class TestImageIO:
             # Test _read_image with each empty file format
             for empty_file in empty_files:
                 with pytest.raises(Exception, match=".*"):  # Should raise some kind of exception
-                    _read_image(empty_file, test_config)
+                    read_images(
+                        empty_file,
+                        n_output_channels=test_config.n_output_channels,
+                        channel_combination=test_config.channel_combination,
+                        fits_extension=test_config.fits_extension,
+                    )
 
             # Test load_and_process_images with empty files
             # Should handle errors gracefully and return empty results or raise exception

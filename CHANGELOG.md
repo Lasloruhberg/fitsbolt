@@ -1,4 +1,26 @@
 # Changelog
+## [0.1.2] - 2025-08-14
+
+### Added
+
+- Option to skip channel combiation in read_images (read_only = True)
+- A function `batch_channel_combination`, to handle channel combinations
+- Added Midtones Transfer Function (MIDTONES) normalisation method for better control over image contrast
+
+### Fixed
+
+- Included full parameter control for zscale and log normalisation
+
+### Changed
+
+- Modularised the channel combination funciton into a standalone function `batch_channel_combination`
+    - This function takes an np array (n_images, H, W, C) and combines them based on the 
+- Changed default processing order to read, resize, normalise, combine
+
+### Removed
+
+- `_apply_channel_combination` function, replaced with `batch_channel_combination`
+- `_convert_greyscale_to_nchannels` function, which is now incorporated into `batch_channel_combination`
 
 ## [0.1.1] - 2025-08-07
 

@@ -37,9 +37,19 @@ def create_config(
     norm_maximum_value=None,
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
+    norm_log_scale_a=1000.0,
     norm_crop_for_maximum_value=None,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
+    norm_zscale_n_samples=1000,
+    norm_zscale_contrast=0.25,
+    norm_zscale_max_reject=0.5,
+    norm_zscale_min_pixels=5,
+    norm_zscale_krej=2.5,
+    norm_zscale_max_iter=5,
+    norm_midtones_percentile=99.8,
+    norm_midtones_desired_mean=0.2,
+    norm_midtones_crop=None,
     log_level="WARNING",
     force_dtype=True,
 ):
@@ -58,18 +68,40 @@ def create_config(
                             1:1 if applicable or 1:n_output if only 1 input is provided.
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
 
-        norm_maximum_value (type, optional): Maximum value for normalisation. Defaults to None implying dynamic.
-        norm_minimum_value (type, optional): Minimum value for normalisation. Defaults to None implying dynamic.
-        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
-                            Defaults to False.
-        norm_crop_for_maximum_value (type, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
-                                            should have the length of n_output_channels or 1. Defaults to [0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
-                                            should have the length of n_output_channels or 1. Defaults to [99.8].
+        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None implying dynamic.
+        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None implying dynamic.
+        norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
+                                    the maximum value inside. Defaults to None.
+
+        Default Log settings
+            norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
+                                Defaults to False.
+            norm_log_scale_a (float, optional): Scale factor for astropy log_stretch. Defaults to 1000.0.
+        Default Asinh settings
+            norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [0.7].
+            norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [99.8].
+        Default ZScale settings (from astropy ZScaleInterval):
+            norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
+            norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
+            norm_zscale_max_reject (float, optional): Maximum rejection fraction for zscale normalisation. Defaults to 0.5.
+            norm_zscale_min_pixels (int, optional): Minimum number of pixels that must remain after rejection for
+                                                    zscale normalisation. Defaults to 5.
+            norm_zscale_krej (float, optional): The number of sigma used for the rejection. Defaults to 2.5.
+            norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
+
+        Default MTF settings:
+            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Defaults to 99.8.
+            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
+                                                    Defaults to None.
+
         log_level (str, optional): Logging level. Defaults to "SUCCESS".
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
                             like channel combination. Defaults to True.
+
 
     Returns:
         _type_: _description_
@@ -95,11 +127,32 @@ def create_config(
     )
     # Bool, if False assumes min value to be 0 or cfg.normalisation.minimum_value if not None
     cfg.normalisation.log_calculate_minimum_value = norm_log_calculate_minimum_value
+    cfg.normalisation.log_scale_a = norm_log_scale_a  # float, scale factor for astropy log_stretch
     # only used if cfg.normalisation_method == NormalisationMethod.ASINH:
     # asinh_scale list of 3 floats > 0, defining the scale for each channel (lower = higher stretch):
     cfg.normalisation.asinh_scale = norm_asinh_scale
     # asinh_clip list of 3 floats in ]0.,100.], defining the clip for each channel:
     cfg.normalisation.asinh_clip = norm_asinh_clip
+
+    # ZSCALE settings
+    cfg.normalisation.zscale = DotMap()
+    cfg.normalisation.zscale.n_samples = norm_zscale_n_samples  # int, number of samples for zscale
+    cfg.normalisation.zscale.contrast = norm_zscale_contrast  # float, contrast for zscale
+    # float, maximum rejection fraction for zscale:
+    cfg.normalisation.zscale.max_reject = norm_zscale_max_reject
+    # int, minimum number of pixels for zscale:
+    cfg.normalisation.zscale.min_npixels = norm_zscale_min_pixels
+    cfg.normalisation.zscale.krej = norm_zscale_krej  # float, number of sigma for zscale
+    # int, maximum number of iterations for zscale:
+    cfg.normalisation.zscale.max_iterations = norm_zscale_max_iter
+
+    # MTF settings
+    cfg.normalisation.midtones = DotMap()
+    # float, in ]0., 100.] : percentile for MTF applied to each channel
+    cfg.normalisation.midtones.percentile = norm_midtones_percentile
+    # float in [0,1], desired mean for MTF
+    cfg.normalisation.midtones.desired_mean = norm_midtones_desired_mean
+    cfg.normalisation.midtones.crop = norm_midtones_crop
 
     # FITS file handling settings
     # Extension(s) to use when loading FITS files (can be int, string, or list of int/string)
@@ -189,7 +242,7 @@ def _return_required_and_optional_keys():
         # Required special parameters
         "size": ["special_size", None, None, False, None],
         "normalisation_method": ["special_normalisation_method", None, None, False, None],
-        "normalisation": ["special_normalisation", None, None, False, None],
+        "normalisation": ["special_DotMap", None, None, False, None],
         "normalisation.asinh_scale": ["special_asinh_scale", None, None, False, None],
         "normalisation.asinh_clip": ["special_asinh_clip", None, None, False, None],
         "interpolation_order": [int, 0, 5, False, None],  # 0-5 for skimage interpolation"
@@ -197,10 +250,23 @@ def _return_required_and_optional_keys():
         # Optional numeric parameters
         "normalisation.maximum_value": [float, None, None, True, None],
         "normalisation.minimum_value": [float, None, None, True, None],
+        "normalisation.log_scale_a": [float, 0.0, None, False, None],
         # Optional special parameters
         "normalisation.crop_for_maximum_value": ["special_crop", None, None, True, None],
         "fits_extension": ["special_fits_extension", None, None, True, None],
         "channel_combination": ["special_channel_combination", None, None, True, None],
+        # further params
+        "normalisation.zscale": ["special_DotMap", None, None, True, None],
+        "normalisation.zscale.n_samples": [int, None, None, True, None],
+        "normalisation.zscale.contrast": [float, 0.0, 1.0, True, None],
+        "normalisation.zscale.max_reject": [float, 0.0, 1.0, True, None],
+        "normalisation.zscale.min_npixels": [int, 1, None, True, None],
+        "normalisation.zscale.krej": [float, 0.0001, None, True, None],
+        "normalisation.zscale.max_iterations": [int, 1, 100, True, None],
+        "normalisation.midtones": ["special_DotMap", None, None, True, None],
+        "normalisation.midtones.percentile": [float, 0.0, 100.0, True, None],
+        "normalisation.midtones.desired_mean": [float, 0.0, 1.0, True, None],
+        "normalisation.midtones.crop": ["special_crop", None, None, True, None],
     }
 
     return config_spec
@@ -366,7 +432,7 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     f"{param_name} must be a NormalisationMethod enum value, got {type(value).__name__}"
                 )
 
-        elif dtype == "special_normalisation":
+        elif dtype == "special_DotMap":
             if not isinstance(value, DotMap):
                 raise ValueError(f"{param_name} must be a DotMap, got {type(value).__name__}")
 
@@ -502,3 +568,43 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
     else:
         if current_log_level in ["DEBUG", "INFO", "TRACE"]:
             logger.info("Config: validation successful")
+
+
+def recompute_config_channel_combination(cfg):
+    """Recomputes the channel combination mapping based on the current configuration.
+
+    Args:
+        cfg (Config): The configuration object containing the current settings.
+        Must include n_expected_channels, should only be called after _read_image
+
+    Raises:
+        ValueError: If the channel combination mapping cannot be determined.
+    """
+    # no channel combination, eg not fits extensions specified
+    # get n_expected_channels from read, compare to n_output_channels and create a 1_to n mapping
+    # if n_expected=1 or 1:1 raise a Value Error otherwise
+    # cfg.n_expected_channels is stored as a list, so extract the actual number
+    actual_expected_channels = (
+        cfg.n_expected_channels[0]
+        if isinstance(cfg.n_expected_channels, list)
+        else cfg.n_expected_channels
+    )
+
+    if actual_expected_channels == 1:
+        channel_combination = np.ones((cfg.n_output_channels, actual_expected_channels))
+    elif actual_expected_channels == cfg.n_output_channels:
+        channel_combination = np.eye(cfg.n_output_channels)
+    elif actual_expected_channels == 4 and cfg.n_output_channels == 3:
+        # Common case: RGBA to RGB, drop the alpha channel
+        channel_combination = np.eye(3, 4)
+    else:
+        raise ValueError(
+            f"From files got {actual_expected_channels} expected channels, "
+            f"but requested {cfg.n_output_channels} output channels. "
+            "Cannot automatically create a valid channel combination mapping. "
+            "Please provide the channel_combination parameter"
+        )
+
+    # Store the computed channel combination in the config
+    cfg.channel_combination = channel_combination
+    return

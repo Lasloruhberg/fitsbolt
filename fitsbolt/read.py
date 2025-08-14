@@ -22,9 +22,15 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from astropy.io import fits
 
-from fitsbolt.cfg.create_config import create_config
-from fitsbolt.cfg.create_config import SUPPORTED_IMAGE_EXTENSIONS
-from fitsbolt.cfg.logger import logger
+from .cfg.create_config import (
+    create_config,
+    SUPPORTED_IMAGE_EXTENSIONS,
+    recompute_config_channel_combination,
+)
+from .cfg.logger import logger
+from .channel_mixing import (
+    batch_channel_combination,
+)
 
 
 def read_images(
@@ -37,6 +43,7 @@ def read_images(
     show_progress=True,
     force_dtype=True,
     log_level="WARNING",
+    read_only=False,
 ):
     """Load and process multiple images in parallel.
 
@@ -58,6 +65,7 @@ def read_images(
                                      like channel combination. Defaults to True.
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
+        read_only (bool, optional): If True, skips the channel combination logic.
 
     Returns:
         list: image or list of images for successfully read images
@@ -70,6 +78,15 @@ def read_images(
         images = read_images([["file1.fits", "file2.fits", "file3.fits"]],
                            fits_extension=[0, 1, 2])
     """
+    if read_only:
+        if fits_extension is not None:
+            if isinstance(filepaths[0], list):
+                n_output_channels = len(filepaths[0])
+            else:
+                if isinstance(fits_extension, list):
+                    n_output_channels = len(fits_extension)
+                else:
+                    n_output_channels = 1
 
     # check if input is a single filepath or a list
     if not isinstance(filepaths, (list, np.ndarray)):
@@ -149,6 +166,22 @@ def read_images(
             )
         else:
             results = list(executor.map(read_single_image, filepaths))
+
+    # Combine channels
+    # Do a linear combination based on the configuration
+    # this is only necessary for inputs where fits_extension is None,
+    # otherwise create_cfg will have managed it
+    channel_combination_exists = cfg.get("channel_combination") is not None
+    if not channel_combination_exists:
+        recompute_config_channel_combination(cfg)
+
+    original_dtype = results[0].dtype
+    if cfg.channel_combination is not None and not read_only:
+        results = batch_channel_combination(
+            results,
+            cfg.channel_combination,
+            output_dtype=original_dtype,
+        )
 
     logger.debug(f"Successfully loaded {len(results)} of {len(filepaths)} images")
     if return_single:
@@ -254,18 +287,9 @@ def _read_multi_fits_image(filepaths, fits_extensions, cfg):
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Combine the images into n_output channels
-    original_dtype = extension_images[0].dtype if extension_images else None
-    if cfg.channel_combination is not None:
-        image = _apply_channel_combination(
-            extension_images,
-            cfg.channel_combination,
-            original_dtype,
-            cfg.force_dtype,
-        )
-    else:
-        # Stack the extensions along a new dimension
-        image = np.stack(extension_images)
+    # Combine the images into n_output channels (removed to other function)
+    # Stack the extensions along a new dimension
+    image = np.stack(extension_images)
 
     # For 2D images (now 3D after stacking), treat extensions as channels (RGB)
     if len(extension_shapes[0]) == 2:
@@ -281,6 +305,10 @@ def _read_multi_fits_image(filepaths, fits_extensions, cfg):
             )
         # Transpose to get (Height, Width, Extensions) which is compatible with RGB format
         image = np.transpose(image, (1, 2, 0))
+    # this is now more difficult, check if fits should be loaded and check if there is a mismatch
+    if not cfg.get("n_expected_channels"):
+        cfg.n_expected_channels = len(filepaths)
+
     if image is None:
         logger.error(f"Failed to read image from {filepath}")
         raise ValueError(f"Image reading failed for {filepath}. Check the file format and content.")
@@ -415,19 +443,9 @@ def _read_image(filepath, cfg):
                         logger.error(error_msg)
                         raise ValueError(error_msg)
 
-                    # Combine the extensions into n_output channels
-                    # Do a linear combination based on the configuration
-                    original_dtype = extension_images[0].dtype if extension_images else None
-                    if cfg.channel_combination is not None:
-                        image = _apply_channel_combination(
-                            extension_images,
-                            cfg.channel_combination,
-                            original_dtype,
-                            cfg.force_dtype,
-                        )
-                    else:
-                        # Stack the extensions along a new dimension
-                        image = np.stack(extension_images)
+                    # Combine the extensions into n_output channels (removed to other function)
+                    # Stack the extensions along a new dimension
+                    image = np.stack(extension_images)
 
                     # If images are 2D (Height, Width), stack results in 3D array (Ext, Height, Width)
                     # If images are 3D (Height, Width, Channels), stack results in 4D (Ext, Height, Width, Channels)
@@ -523,104 +541,50 @@ def _read_image(filepath, cfg):
         # raise an error if the image is empty or not loaded correctly
         assert image.size > 0, f"Image {filepath} is empty or not loaded correctly"
 
+    # this is now more difficult, check if fits should be loaded and check if there is a mismatch
+    if not cfg.get("n_expected_channels"):
+        # no previous image read, try to gather what the value should be
+        if cfg.fits_extension is not None:
+            if isinstance(cfg.fits_extension, list):
+                n_expected_channels = [len(cfg.fits_extension)]
+            else:
+                # Single extension (int or string), expect 1 channel
+                n_expected_channels = [1]
+        else:
+            n_expected_channels = [1, 3, 4]  # RGB or RGBA
+    else:
+        # already read an image and fixed n_expected channels
+        n_expected_channels = cfg.n_expected_channels
+
     # make sure image is in H,W,C and not C,H,W format
-    if image.shape[0] == cfg.n_output_channels and image.shape[-1] != cfg.n_output_channels:
+    if image.shape[0] in n_expected_channels and image.shape[-1] not in n_expected_channels:
         image = np.transpose(image, (1, 2, 0))
 
-    # check if there is a greyscale image or an RGBA image that needs to be converted to RGB
-    image = _convert_greyscale_to_nchannels(
-        image,
-        n_output_channels=cfg.n_output_channels,
-    )
-
-    # Validate output shape based on n_output_channels
-    if cfg.n_output_channels == 1:
-        assert (
-            len(image.shape) == 2
-        ), f"After reading, single channel image has unexpected shape: {image.shape} - {filepath}"
+    # Check if the image has the expected number of channels
+    if len(image.shape) == 2:
+        # Grayscale image (1 channel)
+        assert 1 in n_expected_channels, (
+            "Unexpected number of channels: 1 (grayscale),"
+            + f"expected one of {n_expected_channels} from other files/ fits_extension - {filepath}"
+        )
+        # If the image is 2D and we expect 1 channel, we can add a channel dimension to make H,W,1
+        image = image[..., np.newaxis]
     else:
-        assert (
-            len(image.shape) == 3 and image.shape[2] == cfg.n_output_channels
-        ), f"After reading, image has unexpected shape: {image.shape} - {filepath}"
-
+        # Multi-channel image
+        assert image.shape[2] in n_expected_channels, (
+            f"Unexpected number of channels: {image.shape[2]},"
+            + f"expected one of {n_expected_channels} from other files/ fits_extension - {filepath}"
+        )
+    if not cfg.get("n_expected_channels"):
+        cfg.n_expected_channels = [image.shape[2]]
     # return H,W for single channel or H,W,C for multi-channel
     if image is None:
         logger.error(f"Failed to read image from {filepath}")
-        raise ValueError(f"Image reading failed for {filepath}. Check the file format and content.")
+        raise ValueError(
+            f"Image reading failed for {filepath}." + "Check the file format and content."
+        )
     elif isinstance(image, np.ndarray):
         if image.size == 0:
             logger.error(f"Image from {filepath} is empty (size 0)")
             raise ValueError(f"Image from {filepath} is empty (size 0)")
-    return image
-
-
-def _apply_channel_combination(
-    extension_images, channel_combination, original_dtype=None, force_dtype=True
-):
-    """Applies channel combination to the given extension images.
-
-    Args:
-        extension_images (list): list of extension images of shape (H, W), list length = n_fits_extensions.
-        channel_combination (numpy.ndarray): Array of channel combination weights (n_output_channels, n_fits_extensions).
-        original_dtype (numpy.dtype, optional): Original dtype of the input images.
-        force_dtype (bool, optional): If True, forces the output to maintain the original dtype. Defaults to True.
-
-    Returns:
-        numpy.ndarray: Combined image (n_output_channels,H, W).
-    """
-    weights = channel_combination  # Shape: (n_output_channels, n_fits_extensions)
-
-    # Normalize weights to avoid division by zero
-    row_sums = np.sum(weights, axis=1, keepdims=True)
-    # Replace zero sums with 1 to avoid division by zero
-    row_sums[row_sums == 0] = 1
-    weights = weights / row_sums
-
-    # Perform dot product along channel dimension
-    result = np.tensordot(
-        weights, extension_images, axes=1
-    )  # n_ouput,n_input x (n_input, H, W) -> (n_output, H, W) ?
-
-    # Force dtype if requested and original dtype is provided
-    if force_dtype and original_dtype is not None and result.dtype != original_dtype:
-        # Ensure the result stays within the valid range for the target dtype
-        if original_dtype == np.uint8:
-            result = np.clip(result, 0, 255).astype(original_dtype)
-        elif original_dtype == np.uint16:
-            result = np.clip(result, 0, 65535).astype(original_dtype)
-        elif original_dtype in [np.int8, np.int16, np.int32, np.int64]:
-            info = np.iinfo(original_dtype)
-            result = np.clip(result, info.min, info.max).astype(original_dtype)
-        elif original_dtype in [np.float16, np.float32, np.float64]:
-            result = result.astype(original_dtype)
-        else:
-            result = result.astype(original_dtype)
-    return result
-
-
-def _convert_greyscale_to_nchannels(image, n_output_channels):
-    """
-    Convert a grayscale image to a specified number of channels.
-    This function provides some backwards compatibility
-    Args:
-        image (numpy.ndarray): Grayscale image array (H,W,C or H,W)
-        n_output_channels (int): Number of output channels
-    Returns:
-        numpy.ndarray: Image with the specified number of channels (H,W,n_output_channels)
-    """
-    # Handle grayscale images
-    if len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
-        if n_output_channels != 1:
-            image = np.stack((np.squeeze(image),) * n_output_channels, axis=-1)
-        else:
-            # always return a 2D image if n_output_channels is 1
-            image = image[:, :, 0] if len(image.shape) == 3 else image
-
-    # if e.g. rgb (n_output_channels == 3) is requested but an rgba png is loaded
-    # Handle e.g. RGBA images (for png, tiff support)
-    if len(image.shape) == 3 and image.shape[2] > n_output_channels:
-        logger.trace(
-            "Image is in RGBA format. Converting to RGB by dropping the excess (e.g. alpha) channels."
-        )
-        image = image[:, :, :n_output_channels]
     return image

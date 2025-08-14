@@ -169,6 +169,8 @@ class TestNormalisationMethod:
             ("LogStretch", 1),
             ("ZscaleInterval", 2),
             ("Asinh", 3),
+            ("Linear", 4),
+            ("Midtones", 5),
         ]
         assert options == expected
 
@@ -180,6 +182,8 @@ class TestNormalisationMethod:
             NormalisationMethod.LOG,
             NormalisationMethod.ZSCALE,
             NormalisationMethod.ASINH,
+            NormalisationMethod.LINEAR,
+            NormalisationMethod.MIDTONES,
         ]
         assert methods == expected
 
@@ -472,7 +476,7 @@ class TestNormaliseImageIntegration:
 
         result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
-        # Should use center region for normalization, not global max
+        # Should use center region for normalisation, not global max
 
 
 class TestNormalisationRobustness:

@@ -18,12 +18,13 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
-from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
-from fitsbolt.normalisation.normalisation import _normalise_image
-from fitsbolt.cfg.create_config import create_config, validate_config
-from fitsbolt.cfg.logger import logger
-from fitsbolt.resize import _resize_image
-from fitsbolt.read import _read_image
+from .normalisation.NormalisationMethod import NormalisationMethod
+from .normalisation.normalisation import _normalise_image
+from .cfg.create_config import create_config, validate_config, recompute_config_channel_combination
+from .cfg.logger import logger
+from .resize import _resize_image
+from .read import _read_image
+from .channel_mixing import batch_channel_combination
 
 
 def _process_image(
@@ -34,17 +35,40 @@ def _process_image(
     """
     Process an image array by normalising and resizing it.
     Args:
-        image (numpy.ndarray): Image array to process
+        image (numpy.ndarray): Image array to process H,W or H,W,C
         cfg: Configuration object containing size, normalisation_method
         image_source (str): Source of the image for logging
     Returns:
-        numpy.ndarray: Processed image array as uint8
+        numpy.ndarray: Processed image array as uint8 (H,W or H,W,C)
     """
     try:
         logger.trace(f"Normalising image with setting {cfg.normalisation_method}")
+        # Expect a H,W,C image
+        im_is_2d = False
+        if len(image.shape) == 2:
+            image = np.expand_dims(image, axis=-1)
+            im_is_2d = True
+        # first resize, then normalise, then combine channels
+        image = _resize_image(image, cfg, do_type_conversion=False)  # no type conversion here
         image = _normalise_image(image, cfg=cfg)
+        original_dtype = image.dtype
+        # _read image has no channel combination anymore and channel_combination must be done manually now
+        channel_combination_exists = cfg.get("channel_combination") is not None
+        if not channel_combination_exists:
+            recompute_config_channel_combination(cfg)
 
-        image = _resize_image(image, cfg)
+        # batch expects a 1, H,W,C image
+        image = np.expand_dims(image, axis=0)
+        image = batch_channel_combination(
+            image,
+            cfg.channel_combination,
+            original_dtype,
+        )
+        # want to squeeze the image axis again
+        image = np.squeeze(image, axis=0)
+        if im_is_2d:
+            image = np.squeeze(image, axis=-1)
+            # if image was 2D, we want to return it like this
 
         return image
 
@@ -78,17 +102,27 @@ def load_and_process_images(
     num_workers=4,
     norm_maximum_value=None,
     norm_minimum_value=None,
-    norm_log_calculate_minimum_value=False,
     norm_crop_for_maximum_value=None,
+    norm_log_calculate_minimum_value=False,
+    norm_log_scale_a=1000.0,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
+    norm_zscale_n_samples=1000,
+    norm_zscale_contrast=0.25,
+    norm_zscale_max_reject=0.5,
+    norm_zscale_min_pixels=5,
+    norm_zscale_krej=2.5,
+    norm_zscale_max_iter=5,
+    norm_midtones_percentile=99.8,
+    norm_midtones_desired_mean=0.2,
+    norm_midtones_crop=None,
     desc="Loading images",
     show_progress=True,
     log_level="WARNING",
     cfg=None,
 ):
     """Load and process multiple images in parallel.
-        this will first read the image, then normalise it and finally resize it.
+        this will first read the image, then resize it, then normalise it and finally combine channels.
 
     Args:
         filepaths (list): filepath or list of image filepaths to load, or list of lists for multi-FITS mode
@@ -107,15 +141,35 @@ def load_and_process_images(
                                                 Defaults to None.
         n_output_channels (int, optional): Number of output channels for the image. Defaults to 3.
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
-        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None.
-        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None.
-        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
-                                                (normally defaults to 0). Defaults to False.
-        norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
-                                            should have the length of n_channels or 1. Defaults to [0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
-                                            should have the length of n_channels or 1. Defaults to [99.8].
+        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None implying dynamic.
+        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None implying dynamic.
+        norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
+                                    the maximum value inside. Defaults to None.
+        Default Log settings
+            norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
+                                Defaults to False.
+            norm_log_scale_a (float, optional): Scale factor for astropy log_stretch. Defaults to 1000.0.
+        Default Asinh settings
+            norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [0.7].
+            norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [99.8].
+        Default ZScale settings (from astropy ZScaleInterval):
+            norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
+            norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
+            norm_zscale_max_reject (float, optional): Maximum rejection fraction for zscale normalisation. Defaults to 0.5.
+            norm_zscale_min_pixels (int, optional): Minimum number of pixels that must remain after rejection
+                                                    for zscale normalisation. Defaults to 5.
+            norm_zscale_krej (float, optional): The number of sigma used for the rejection. Defaults to 2.5.
+            norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
+
+        Default MTF settings:
+            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Defaults to 99.8.
+            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
+                                                  Defaults to None.
+
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
@@ -163,9 +217,19 @@ def load_and_process_images(
             norm_maximum_value=norm_maximum_value,
             norm_minimum_value=norm_minimum_value,
             norm_log_calculate_minimum_value=norm_log_calculate_minimum_value,
+            norm_log_scale_a=norm_log_scale_a,
             norm_crop_for_maximum_value=norm_crop_for_maximum_value,
             norm_asinh_scale=norm_asinh_scale,
             norm_asinh_clip=norm_asinh_clip,
+            norm_zscale_n_samples=norm_zscale_n_samples,
+            norm_zscale_contrast=norm_zscale_contrast,
+            norm_zscale_max_reject=norm_zscale_max_reject,
+            norm_zscale_min_pixels=norm_zscale_min_pixels,
+            norm_zscale_krej=norm_zscale_krej,
+            norm_zscale_max_iter=norm_zscale_max_iter,
+            norm_midtones_percentile=norm_midtones_percentile,
+            norm_midtones_desired_mean=norm_midtones_desired_mean,
+            norm_midtones_crop=norm_midtones_crop,
             log_level=log_level,
         )
     else:
