@@ -84,7 +84,7 @@ For convenience, images can be read and processed by just one function call with
 from fitsbolt import load_and_process_images, NormalisationMethod
 import numpy as np
 
-# List of image paths
+# List of image paths if multiple formats are provided they must have the same number of channels
 filepaths = ["image1.fits", "image2.fits", "image3.jpg"]
 
 # Load and process images with default settings
@@ -92,7 +92,7 @@ results = load_and_process_images(
     filepaths=filepaths,
     size=[224, 224],                                    # Target size for resizing
     normalisation_method=NormalisationMethod.ASINH,     # Normalisation method
-    fits_extension=['PRIMARY'],                         # FITS extension to use
+    fits_extension=['SCI','ERR','WHT'],                 # FITS extension to use
     n_output_channels=3, # will map the primary extension into a grey RGB image
     num_workers=4,                                      # Parallel processing
     show_progress=True                                  # Show progress bar
@@ -128,7 +128,7 @@ import numpy as np
 channel_map = np.array([
     [0.7, 0.3, 0.0],  # R = 70% ext0 + 30% ext1
     [0.0, 1.0, 0.0],  # G = 100% ext1
-    [0.0, 0.5, 0.5]   # B = 50% ext1 + 50% ext2
+    [0.0, 0.5, 1.5]   # B = 50% ext1 + 50% ext2
 ])
 
 # Read multi-extension FITS files
@@ -251,11 +251,11 @@ When loading multiple FITS extensions, this parameter controls how they are comb
   - If `fits_extension` has only 1 element: Maps the single extension to all output channels
   - Otherwise: Raises an error if no explicit mapping is provided
 
-- **Explicit mapping**: A numpy array of shape `(n_output_channels, len(fits_extension))` 
+- **Explicit mapping**: A numpy array of shape `(n_output_channels, n_channels_in_image)` 
   - Each row represents an output channel
   - Each column represents a weight for the corresponding FITS extension
-  - Weights are normalised to sum to 1 for each output channel
-  
+  - Weights can be an array of any float, however it is recommended to only use positive weights
+
 **Example**: If you have 3 FITS extensions and want a custom RGB mapping:
 ```python
 # Create a custom mapping: 
@@ -265,7 +265,7 @@ When loading multiple FITS extensions, this parameter controls how they are comb
 channel_map = np.array([
     [0.7, 0.3, 0.0],  # R channel
     [0.0, 1.0, 0.0],  # G channel
-    [0.0, 0.5, 0.5]   # B channel
+    [0.0, 0.5, 1.5]   # B channel
 ])
 
 results = load_and_process_images(
