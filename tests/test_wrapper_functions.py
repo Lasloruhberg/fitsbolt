@@ -26,7 +26,6 @@ from PIL import Image
 from astropy.io import fits
 
 from fitsbolt.read import read_images
-from fitsbolt.channel_mixing import convert_greyscale_to_nchannels
 from fitsbolt.resize import resize_images, resize_image
 from fitsbolt.normalisation.normalisation import normalise_images, _normalise_image
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
@@ -86,36 +85,6 @@ class TestWrapperFunctionEdgeCases:
         file_paths = [self.gray_path, self.rgb_path]  # Valid files that will load
         with pytest.raises(AssertionError, match="Unexpected number of channels: 3"):
             read_images(file_paths, show_progress=False)
-
-    def testconvert_greyscale_to_nchannels_function(self):
-        """Test the convert_greyscale_to_nchannels function directly."""
-        # Create a 2D grayscale image
-        gray_img = np.zeros((50, 50), dtype=np.float32)
-        gray_img[20:30, 20:30] = 1.0
-
-        # Test conversion to 3 channels (RGB)
-        rgb_result = convert_greyscale_to_nchannels(gray_img, 3)
-        assert rgb_result.shape == (50, 50, 3), "Should convert to 3 channels"
-        assert np.allclose(
-            rgb_result[:, :, 0], rgb_result[:, :, 1]
-        ), "All channels should be identical"
-        assert np.allclose(
-            rgb_result[:, :, 1], rgb_result[:, :, 2]
-        ), "All channels should be identical"
-
-        # Test conversion to 1 channel (should return as-is)
-        single_result = convert_greyscale_to_nchannels(gray_img, 1)
-        assert single_result.shape == (50, 50), "Should remain 2D for single channel"
-        assert np.array_equal(single_result, gray_img), "Should be unchanged for single channel"
-
-        # Test conversion to 4 channels (RGBA)
-        rgba_result = convert_greyscale_to_nchannels(gray_img, 4)
-        assert rgba_result.shape == (50, 50, 4), "Should convert to 4 channels"
-
-        # Test with 3D input that's already multichannel
-        rgb_img = np.zeros((50, 50, 3), dtype=np.float32)
-        rgb_result_3d = convert_greyscale_to_nchannels(rgb_img, 3)
-        assert rgb_result_3d.shape == (50, 50, 3), "Should remain unchanged for matching channels"
 
     def test_resize_images_edge_cases(self):
         """Test resize_images with edge cases."""
