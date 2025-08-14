@@ -369,6 +369,15 @@ fitsbolt provides several normalisation methods for handling astronomical images
       - First: clipping based on the set min/max, then clipping symmetrically by percentile each channel and then dividing with the asinh_scale cfg parameter, and normalising
       - Minimum and Maximum are computed or based on the norm_minimum/maximum_value parameters if set
 
+6. **MIDTONES**:
+   - Applies a Midtones Transfer Function (MTF) for fine-tuned contrast control
+   - Similar to the "curves" tool in image editing software
+   - Automatically computes the curve parameter to achieve a desired mean brightness
+   - Parameters:
+      - norm_midtones_percentile: Percentile for clipping (default: 99.8)
+      - norm_midtones_desired_mean: Target mean brightness value (default: 0.2)
+      - norm_midtones_crop: Optional crop area for mean calculation (h,w)
+
 ### Configuration Parameters
 
 #### General Parameters
@@ -384,7 +393,7 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **read_only**: If True, skips automatic channel combination for manual processing (default: False)
 
 #### Normalisation Parameters
-- **normalisation_method**: Method to use for normalisation (CONVERSION_ONLY, LINEAR, LOG, ZSCALE, ASINH)
+- **normalisation_method**: Method to use for normalisation (CONVERSION_ONLY, LINEAR, LOG, ZSCALE, ASINH, MIDTONES)
 - **norm_maximum_value**: Maximum value for normalisation (overrides auto-detection)
 - **norm_minimum_value**: Minimum value for normalisation (overrides auto-detection)
 - **norm_crop_for_maximum_value**: Tuple (height, width) to crop around center for max value calculation
@@ -404,3 +413,8 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **norm_zscale_min_pixels**: Minimum number of pixels that must remain after rejection (default: 5)
 - **norm_zscale_krej**: Number of sigma used for rejection (default: 2.5)
 - **norm_zscale_max_iter**: Maximum number of iterations for zscale normalisation (default: 5)
+
+##### Midtones Normalisation Parameters
+- **norm_midtones_percentile**: Percentile for clipping in each channel (default: 99.8)
+- **norm_midtones_desired_mean**: Target mean brightness value between 0 and 1 (default: 0.2)
+- **norm_midtones_crop**: Optional crop dimensions (height, width) for calculating the mean

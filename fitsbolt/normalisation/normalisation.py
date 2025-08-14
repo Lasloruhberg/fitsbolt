@@ -399,36 +399,34 @@ def _apply_midtones_on_normalised_data(x, m):
     """Apply the midtones normalisation
 
     Args:
-        x (np.ndarray): _description_
-        m (float): _description_
+        x (np.ndarray): The input image data.
+        m (float): The midtones balance parameter.
 
     Returns:
-        _type_: _description_
+        np.ndarray: The transformed image data.
     """
 
     assert x.max() <= 1
     assert x.min() >= 0
-    y = np.zeros_like(x)
-    mask0 = x == 0
-    maskm = x == m
-    mask1 = x == 1
-    mask_else = ~(mask0 | maskm | mask1)
-    # these remain fixed
-    y[mask0] = 0
-    y[maskm] = 0.5
-    y[mask1] = 1
-    # ..and everything else gets curved
+    Zero_mask = x == 0
+    Midtones_mask = x == m
+    Full_mask = x == 1
+    mask_else = ~(Zero_mask | Midtones_mask | Full_mask)
+
+    # create an output array that keeps some fixed values
+    output = np.zeros_like(x)
+    output[Zero_mask] = 0
+    output[Midtones_mask] = 0.5
+    output[Full_mask] = 1
     x_else = x[mask_else]
 
-    # shape of the curve
-    numerator = (m - 1) * x_else
-    denominator = (2 * m - 1) * x_else - m
     # apply the curve
-    y[mask_else] = numerator / denominator
-    return y  # curved values
+    output[mask_else] = ((m - 1) * x_else) / ((2 * m - 1) * x_else - m)
+    output = np.nan_to_num(output, nan=0.0, posinf=1.0, neginf=0.0)  # ensure no NaNs or infs
+    return output
 
 
-def _find_m_for_mean(normalised_data, cfg):
+def _find_mean_of_normalised(normalised_data, cfg):
     """Find the midtones balance parameter m for the given normalised data."""
     if cfg.normalisation.midtones.crop is not None:
         h, w = cfg.normalisation.midtones.crop
@@ -446,8 +444,8 @@ def _find_m_for_mean(normalised_data, cfg):
 
 def _midtones_normalisation(data, cfg):
     """Compute the Midtones Transfer Function (MTF) for given x and m.
-    This is similar to automatically set the "curves" tool from e.g. photoshop,
-    where m sets the curve and MTF is the application of the curve.
+    This is similar to the "curves" tool from image editing software,
+    m sets the curve and MTF is the application of the curve.
 
     Args:
         x (np.ndarray): The input image data.
@@ -480,7 +478,7 @@ def _midtones_normalisation(data, cfg):
         min_value = _compute_min_value(data[..., c], cfg)
         normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
 
-        m = _find_m_for_mean(normalised_channel, cfg)
+        m = _find_mean_of_normalised(normalised_channel, cfg)
         # Apply the MTF to the image
         transformed_channel = _apply_midtones_on_normalised_data(normalised_channel, m)
 

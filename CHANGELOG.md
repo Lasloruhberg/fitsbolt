@@ -5,6 +5,7 @@
 
 - Option to skip channel combiation in read_images (read_only = True)
 - A function `batch_channel_combination`, to handle channel combinations
+- Added Midtones Transfer Function (MIDTONES) normalisation method for better control over image contrast
 
 ### Fixed
 
