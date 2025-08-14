@@ -156,6 +156,23 @@ class TestWrapperFunctionEdgeCases:
         assert result.dtype == np.uint8, "Should convert to uint8"
         assert result.shape == (50, 50, 3), "Should maintain shape"
 
+    def test_normalise_images_log_with_4D(self):
+        """Test LOG normalisation with calculate minimum value option."""
+        imgs = np.zeros((4, 50, 50, 3), dtype=np.float32)
+        for i in range(0, 3):
+            imgs[i, 20:30, 20:30, 0] = 1000.0 + i * 1000.0  # High value
+            imgs[i, 10:20, 10:20, 0] = -500.0 + i * -100.0  # Negative value
+
+        result = normalise_images(
+            imgs,
+            normalisation_method=NormalisationMethod.LOG,
+            norm_log_calculate_minimum_value=True,
+            show_progress=False,
+        )
+        for i in range(0, 3):
+            assert result[i].dtype == np.uint8, "Should convert to uint8"
+            assert result[i].shape == (50, 50, 3), "Should maintain shape"
+
     def test_normalise_images_with_crop_for_maximum(self):
         """Test normalisation with crop_for_maximum_value parameter."""
         img = np.zeros((100, 100, 3), dtype=np.float32)
