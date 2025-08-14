@@ -105,9 +105,7 @@ class TestBatchChannelCombination:
         cutouts = np.array([[[[1, 2]]]], dtype=np.uint8)
         weights = np.array([[0.5, 0.5]], dtype=np.float32)
 
-        result = batch_channel_combination(
-            cutouts, weights, original_dtype=np.uint8, force_dtype=True
-        )
+        result = batch_channel_combination(cutouts, weights, output_dtype=np.uint8)
 
         assert result.dtype == np.uint8
         expected = np.array(
@@ -120,9 +118,7 @@ class TestBatchChannelCombination:
         cutouts = np.array([[[[1, 2]]]], dtype=np.uint8)
         weights = np.array([[0.5, 0.5]], dtype=np.float32)
 
-        result = batch_channel_combination(
-            cutouts, weights, original_dtype=np.uint8, force_dtype=False
-        )
+        result = batch_channel_combination(cutouts, weights)
 
         # Result should be in float (from the computation)
         assert result.dtype != np.uint8

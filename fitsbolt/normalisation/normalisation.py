@@ -230,7 +230,7 @@ def _conversiononly_normalisation(data, cfg):
         numpy array: A converted image in the specified output dtype any float output will be between [0,1]
     """
     # If input dtype already matches the requested output dtype and it's float32,
-    # we still need to ensure it's normalized to [0,1] range
+    # we still need to ensure it's normalised to [0,1] range
     # For any other case, use normalised conversion (e.g. for input floats)
 
     # get min or max from config if available
@@ -431,7 +431,7 @@ def normalise_images(
     """Load and process multiple images in parallel.
 
     Args:
-        images (list): image or list of images to normalise
+        images (list): image or list of images(H,W) or (H,W,C) to normalise
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
         normalisation_method (NormalisationMethod, optional): Normalisation method to use.
                                                 Defaults to NormalisationMethod.CONVERSION_ONLY.
@@ -455,21 +455,31 @@ def normalise_images(
         list: List of images for successfully normalised images
     """
     # check if input is a single image array or a list of images
-    if isinstance(images, np.ndarray) and images.ndim >= 2:
+    if isinstance(images, np.ndarray) and (images.ndim == 2 or images.ndim == 3):
         # Single image array
         return_single = True
+        n_output_channels = images.shape[-1] if images.ndim == 3 else 1
         images = [images]
     elif isinstance(images, list):
+        if len(images) == 0:
+            return []
         # List of images
         return_single = False
+        n_output_channels = images[0].shape[-1] if images[0].ndim == 3 else 1
+
+    elif isinstance(images, np.ndarray) and images.ndim == 4:
+        # provide support if user provises an array instead of a list
+        return_single = False
+        n_output_channels = images.shape[-1]
     else:
-        # Single non-array image (shouldn't happen in normal use)
-        return_single = True
-        images = [images]
+        raise ValueError(
+            f"Unsupported image format: {type(images)}, should be a list or a 2D, 3D array (single images) or a 4D array"
+        )
 
     cfg = create_config(
         output_dtype=output_dtype,
         normalisation_method=normalisation_method,
+        n_output_channels=n_output_channels,
         num_workers=num_workers,
         norm_maximum_value=norm_maximum_value,
         norm_minimum_value=norm_minimum_value,

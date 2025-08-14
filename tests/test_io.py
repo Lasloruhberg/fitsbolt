@@ -171,7 +171,7 @@ class TestImageIO:
         cls.multi_fits_path = os.path.join(cls.test_dir, "multi_channel.fits")
         hdu_list.writeto(cls.multi_fits_path, overwrite=True)
 
-        # Create FITS with extreme values to test normalization
+        # Create FITS with extreme values to test normalisation
         extreme_data = np.zeros((100, 100), dtype=np.float32)
         extreme_data[10:40, 10:40] = -1000.0  # Very negative values
         extreme_data[50:80, 50:80] = 1000.0  # Very positive values
@@ -1017,13 +1017,13 @@ class TestImageIO:
                 test_config.n_output_channels,
             ), "Processed image should maintain 3 channels"
 
-            # Verify the image was normalized correctly to uint8 range (0-255)
+            # Verify the image was normalised correctly to uint8 range (0-255)
             # If normalisation is CONVERSION_ONLY, values are rescaled to 0-255 range
             # Channel 0 should be 0
             # Channel 1 should be 2.0/3.5*255 =~ 146
             # Channel 2 should be 3.5/3.5*255 =~ 255
 
-            # Allow some tolerance due to normalization and rounding
+            # Allow some tolerance due to normalisation and rounding
             assert np.mean(processed[:, :, 0]) < 1, "Channel 0 should be close to 0"
 
             # Check channel 1 (should be around 146)

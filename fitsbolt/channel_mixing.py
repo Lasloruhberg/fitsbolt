@@ -34,7 +34,7 @@ def apply_channel_combination(
     """
     weights = channel_combination  # Shape: (n_output_channels, n_fits_extensions)
 
-    # Normalize weights to avoid division by zero
+    # normalise weights to avoid division by zero
     row_sums = np.sum(weights, axis=1, keepdims=True)
     # Replace zero sums with 1 to avoid division by zero
     row_sums[row_sums == 0] = 1
@@ -102,34 +102,35 @@ def convert_greyscale_to_nchannels(image, n_output_channels):
 
 
 def batch_channel_combination(
-    cutouts: np.array, weights: np.ndarray, original_dtype=None, force_dtype=True
+    images: np.array, channel_combination: np.ndarray, output_dtype=None
 ) -> np.ndarray:
     """
     Combine multiple channels with specified weights.
 
     Args:
-        cutouts: Array of n_images, H, W, n_extensions
-        weights: Array of n_output_channels x n_extensions
+        images: Array of (n_images, H, W, n_extensions)
+        channel_combination: Array of n_output_channels x n_extensions
+        original_dtype=
 
     Returns:
         Combined image array of n_images, H, W, n_output_channels
     """
-    # Contract the last axis of cutouts (n_extensions) with the last axis of weights (n_extensions)
-    # cutouts: (n_images, H, W, n_extensions) @ weights.T: (n_extensions, n_output_channels)
+    # Contract the last axis of images (n_extensions) with the last axis of channel_combination (n_extensions)
+    # images: (n_images, H, W, n_extensions) @ channel_combination.T: (n_extensions, n_output_channels)
     # Result: (n_images, H, W, n_output_channels)
-    combined = np.tensordot(cutouts, weights.T, axes=([3], [0]))
+    combined = np.tensordot(images, channel_combination.T, axes=([3], [0]))
 
-    if force_dtype and original_dtype is not None and combined.dtype != original_dtype:
+    if output_dtype is not None and combined.dtype != output_dtype:
         # Apply the same dtype clipping logic as in apply_channel_combination
-        if original_dtype == np.uint8:
-            combined = np.clip(combined, 0, 255).astype(original_dtype)
-        elif original_dtype == np.uint16:
-            combined = np.clip(combined, 0, 65535).astype(original_dtype)
-        elif original_dtype in [np.int8, np.int16, np.int32, np.int64]:
-            info = np.iinfo(original_dtype)
-            combined = np.clip(combined, info.min, info.max).astype(original_dtype)
-        elif original_dtype in [np.float16, np.float32, np.float64]:
-            combined = combined.astype(original_dtype)
+        if output_dtype == np.uint8:
+            combined = np.clip(combined, 0, 255).astype(output_dtype)
+        elif output_dtype == np.uint16:
+            combined = np.clip(combined, 0, 65535).astype(output_dtype)
+        elif output_dtype in [np.int8, np.int16, np.int32, np.int64]:
+            info = np.iinfo(output_dtype)
+            combined = np.clip(combined, info.min, info.max).astype(output_dtype)
+        elif output_dtype in [np.float16, np.float32, np.float64]:
+            combined = combined.astype(output_dtype)
         else:
-            combined = combined.astype(original_dtype)
+            combined = combined.astype(output_dtype)
     return combined

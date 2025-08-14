@@ -188,7 +188,7 @@ class TestReadFunctions:
             ]
         )
 
-        # Normalize weights to avoid division by zero
+        # normalise weights to avoid division by zero
         for i in range(weights.shape[0]):
             row_sum = np.sum(weights[i])
             if row_sum > 0:
@@ -265,7 +265,7 @@ class TestReadFunctions:
             ]
         )
 
-        # Normalize weights to avoid division by zero
+        # normalise weights to avoid division by zero
         for i in range(weights.shape[0]):
             row_sum = np.sum(weights[i])
             if row_sum > 0:

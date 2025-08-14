@@ -106,7 +106,7 @@ class TestConfigValidation:
             )
 
     def test_norm_parameters_validation(self):
-        """Test validation of normalization parameters."""
+        """Test validation of normalisation parameters."""
         # Test with invalid norm_asinh_scale
         with pytest.raises(ValueError):
             create_config(

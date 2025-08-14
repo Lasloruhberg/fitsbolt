@@ -643,18 +643,18 @@ class TestWrapperFunctions:
             load_and_process_images(mixed_paths, show_progress=False)
 
     def test_normalise_images_comprehensive_dtype_combinations(self):
-        """Test normalise_images with all normalization methods and all input/output dtype combinations."""
+        """Test normalise_images with all normalisation methods and all input/output dtype combinations."""
         # Test input data types: float32, uint8, uint16
-        # Test output data types: uint8, uint16, float32 (float16 is not supported by the normalization code)
-        # Test all normalization methods: CONVERSION_ONLY, LOG, ZSCALE, ASINH
+        # Test output data types: uint8, uint16, float32 (float16 is not supported by the normalisation code)
+        # Test all normalisation methods: CONVERSION_ONLY, LOG, ZSCALE, ASINH
 
         # Define test input data types
         input_dtypes = [np.float32, np.uint8, np.uint16]
 
-        # Define test output data types (only those supported by the normalization code)
+        # Define test output data types (only those supported by the normalisation code)
         output_dtypes = [np.uint8, np.uint16, np.float32]
 
-        # Define test normalization methods
+        # Define test normalisation methods
         norm_methods = [
             NormalisationMethod.CONVERSION_ONLY,
             NormalisationMethod.LOG,
@@ -708,7 +708,7 @@ class TestWrapperFunctions:
                     test_img = test_images[input_dtype].copy()
 
                     try:
-                        # Apply normalization using the internal function with our custom config
+                        # Apply normalisation using the internal function with our custom config
                         result = _normalise_image(test_img, cfg)
 
                         # Verify output dtype
@@ -773,7 +773,7 @@ class TestWrapperFunctions:
             normalisation_method=NormalisationMethod.CONVERSION_ONLY,
         )
 
-        # Apply normalization - should fall back to uint8
+        # Apply normalisation - should fall back to uint8
         result = _normalise_image(img, cfg)
 
         # Should fall back to uint8, not float16

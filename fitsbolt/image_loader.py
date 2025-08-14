@@ -45,15 +45,12 @@ def _process_image(
         logger.trace(f"Normalising image with setting {cfg.normalisation_method}")
         # Expect a H,W,C image
         im_is_2d = False
-        print(image)
         if len(image.shape) == 2:
             image = np.expand_dims(image, axis=-1)
             im_is_2d = True
         # first resize, then normalise, then combine channels
         image = _resize_image(image, cfg, do_type_conversion=False)  # no type conversion here
-        print(cfg)
         image = _normalise_image(image, cfg=cfg)
-        print(f"Normalised image with dtype {image.dtype} and shape {image}")
         original_dtype = image.dtype
         # _read image has no channel combination anymore and channel_combination must be done manually now
         channel_combination_exists = cfg.get("channel_combination") is not None
@@ -66,7 +63,6 @@ def _process_image(
             image,
             cfg.channel_combination,
             original_dtype,
-            force_dtype=True,
         )
         # want to squeeze the image axis again
         image = np.squeeze(image, axis=0)
@@ -116,7 +112,7 @@ def load_and_process_images(
     cfg=None,
 ):
     """Load and process multiple images in parallel.
-        this will first read the image, then normalise it and finally resize it.
+        this will first read the image, then resize it, then normalise it and finally combine channels.
 
     Args:
         filepaths (list): filepath or list of image filepaths to load, or list of lists for multi-FITS mode

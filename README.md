@@ -34,30 +34,42 @@ import numpy as np
 # List of image paths
 filepaths = ["image1.fits", "image2.fits"] # could be jpg,tiff,png
 
-# Step 1: Read images
+# Step 1: Read images (read_only=True to skip channel combination)
 raw_images = fitsbolt.read_images(
     filepaths=filepaths,
     fits_extension=0,
-    n_output_channels =3, # RGB, H,W,C format
+    n_output_channels=3, # RGB, H,W,C format
     num_workers=4,
-    show_progress=True
+    show_progress=True,
+    read_only=True  # Skip channel combination for manual processing
 )
 
-# Step 2: Normalise images  
-normalised_images = fitsbolt.normalise_images(
+# Step 2: Resize images (recommended to use float32 for processing)
+resized_images = fitsbolt.resize_images(
     images=raw_images,
-    normalisation_method=fitsbolt.NormalisationMethod.LOG,
-    show_progress=True
-)
-
-# Step 3: Resize images
-final_images = fitsbolt.resize_images(
-    images=normalised_images,
     size=[224, 224],
     interpolation_order=1,
-    output_dtype=np.uint8,
+    output_dtype=np.float32,  # Recommended for processing
     show_progress=True
 )
+
+# Step 3: Normalise images  
+normalised_images = fitsbolt.normalise_images(
+    images=resized_images,
+    normalisation_method=fitsbolt.NormalisationMethod.LOG,
+    output_dtype=np.uint8,  # Final output as uint8
+    show_progress=True
+)
+
+# Step 4: Apply channel combination if needed
+if raw_images[0].shape[-1] > 3:  # If more channels than needed
+    final_images = fitsbolt.batch_channel_combination(
+        normalised_images,
+        channel_combination=np.eye(3),  # Identity matrix for direct mapping
+        output_dtype=normalised_images[0].dtype
+    )
+else:
+    final_images = normalised_images
 
 print(f"Processed {len(final_images)} images")
 for i, img in enumerate(final_images):
@@ -66,7 +78,7 @@ for i, img in enumerate(final_images):
 
 ### Using the Complete Pipeline
 
-For convenience, images can be read and processed by just one function call:
+For convenience, images can be read and processed by just one function call with the recommended processing order (read, resize, normalise, combine):
 
 ```python
 from fitsbolt import load_and_process_images, NormalisationMethod
@@ -80,7 +92,7 @@ results = load_and_process_images(
     filepaths=filepaths,
     size=[224, 224],                                    # Target size for resizing
     normalisation_method=NormalisationMethod.ASINH,     # Normalisation method
-    fits_extension=['PRIMARY'],                                   # FITS extension to use
+    fits_extension=['PRIMARY'],                         # FITS extension to use
     n_output_channels=3, # will map the primary extension into a grey RGB image
     num_workers=4,                                      # Parallel processing
     show_progress=True                                  # Show progress bar
@@ -139,10 +151,11 @@ Reads image files and returns raw image arrays.
 ```python
 images = fitsbolt.read_images(
     filepaths=["img1.fits", "img2.jpg"],
-    fits_extension=0,           # FITS extension to use
-    n_output_channels=3,       # greyscale image mapped to 3 channels, jpg read normally
-    num_workers=4,             # Parallel processing
-    show_progress=True         # Progress bar
+    fits_extension=[0,1,2],           # FITS extension to use
+    n_output_channels=3,        # 3 channels for both fits and jpg
+    num_workers=4,              # Parallel processing
+    show_progress=True,         # Progress bar
+    read_only=False             # (Default), will combine channels base ond 
 )
 ```
 
@@ -151,10 +164,11 @@ Normalises image arrays using various astronomical-optimized methods.
 
 ```python
 normalised = fitsbolt.normalise_images(
-    images=raw_images,
+    images=resized_images,
     normalisation_method=fitsbolt.NormalisationMethod.ASINH,
     norm_asinh_scale=[0.7, 0.7, 0.7],
     norm_asinh_clip=[99.8, 99.8, 99.8],
+    output_dtype=np.uint8,     # Final output dtype
     num_workers=4,
     show_progress=True
 )
@@ -165,10 +179,10 @@ Resizes image arrays to specified dimensions.
 
 ```python
 resized = fitsbolt.resize_images(
-    images=normalised_images,
+    images=raw_images,
     size=[224, 224],           # Target size [height, width]
     interpolation_order=1,     # 0-5, higher = smoother
-    output_dtype=np.uint8,     # Output data type
+    output_dtype=np.float32,   # Recommended: float32 for processing chain
     show_progress=True
 )
 ```
@@ -176,7 +190,7 @@ resized = fitsbolt.resize_images(
 ### Complete Pipeline Function
 
 #### `fitsbolt.load_and_process_images()`
-Combines all three steps in a single function call.
+Combines all steps in a single function call with the recommended processing order: read, resize, normalise, combine.
 
 ```python
 processed = fitsbolt.load_and_process_images(
@@ -185,6 +199,17 @@ processed = fitsbolt.load_and_process_images(
     normalisation_method=fitsbolt.NormalisationMethod.ASINH,
     fits_extension=0,
     num_workers=4
+)
+```
+
+#### `fitsbolt.batch_channel_combination()`
+Applies channel combination to batch arrays when using manual processing.
+
+```python
+combined = fitsbolt.batch_channel_combination(
+    images,                    # Input array (N, H, W, C)
+    channel_combination,       # Combination matrix (n_out, n_in)  
+    output_dtype=np.float32,   # Choose output dtype as computation converts to float32
 )
 ```
 
@@ -321,18 +346,24 @@ fitsbolt provides several normalisation methods for handling astronomical images
      - uint8/uint16 to float32: Scaled to [0,1] range
    - For all other cases: Linear stretch between min and max values
 
-2. **LOG**:
+2. **LINEAR**:
+   - Applies a linear stretch using astropy's LinearStretch
+   - Uses the configured minimum and maximum values for normalisation
+   - If not specified, uses the data's min/max values
+   - Clips values to the target range
+
+3. **LOG**:
    - Applies a logarithmic stretch
    - Minimum: Either 0 or the minimum value of the array (controlled by log_calculate_minimum_value)
    - Maximum: Determined dynamically or set by norm_maximum_value
    - Optional center cropping available for maximum value determination
 
-3. **ZSCALE**:
+4. **ZSCALE**:
    - Applies a linear stretch using the ZScale algorithm from astropy
    - Uses statistical sampling to determine optimal contrast limits
    - Falls back to CONVERSION_ONLY if min=max
 
-4. **ASINH**:
+5. **ASINH**:
    - Applies an inverse hyperbolic sine (arcsinh) stretch
    - Parameters:
       - First: clipping based on the set min/max, then clipping symmetrically by percentile each channel and then dividing with the asinh_scale cfg parameter, and normalising
@@ -350,9 +381,10 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **fits_extension**: FITS extension(s) to use (None, index, name, or list)
 - **n_output_channels**: Number of channels in the output image (default: 3 for RGB)
 - **channel_combination**: Array defining how to combine FITS extensions into output channels
+- **read_only**: If True, skips automatic channel combination for manual processing (default: False)
 
 #### Normalisation Parameters
-- **normalisation_method**: Method to use for normalisation (CONVERSION_ONLY, LOG, ZSCALE, ASINH)
+- **normalisation_method**: Method to use for normalisation (CONVERSION_ONLY, LINEAR, LOG, ZSCALE, ASINH)
 - **norm_maximum_value**: Maximum value for normalisation (overrides auto-detection)
 - **norm_minimum_value**: Minimum value for normalisation (overrides auto-detection)
 - **norm_crop_for_maximum_value**: Tuple (height, width) to crop around center for max value calculation

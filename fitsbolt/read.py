@@ -78,6 +78,15 @@ def read_images(
         images = read_images([["file1.fits", "file2.fits", "file3.fits"]],
                            fits_extension=[0, 1, 2])
     """
+    if read_only:
+        if fits_extension is not None:
+            if isinstance(filepaths[0], list):
+                n_output_channels = len(filepaths[0])
+            else:
+                if isinstance(fits_extension, list):
+                    n_output_channels = len(fits_extension)
+                else:
+                    n_output_channels = 1
 
     # check if input is a single filepath or a list
     if not isinstance(filepaths, (list, np.ndarray)):
@@ -171,8 +180,7 @@ def read_images(
         results = batch_channel_combination(
             results,
             cfg.channel_combination,
-            original_dtype,
-            cfg.force_dtype,
+            output_dtype=original_dtype,
         )
 
     logger.debug(f"Successfully loaded {len(results)} of {len(filepaths)} images")

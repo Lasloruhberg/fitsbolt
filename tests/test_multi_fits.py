@@ -130,7 +130,7 @@ class TestMultiFITS:
         assert len(images) == 1, "Should return one combined image"
         image = images[0]
 
-        # Should be processed (resized and normalized)
+        # Should be processed (resized and normalised)
         assert image.shape == (32, 32, 3), f"Expected (32, 32, 3), got {image.shape}"
         assert image.dtype == np.uint8, f"Expected uint8, got {image.dtype}"
 

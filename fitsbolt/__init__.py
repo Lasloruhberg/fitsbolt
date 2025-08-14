@@ -23,6 +23,7 @@ from .resize import resize_images
 from .normalisation.NormalisationMethod import NormalisationMethod
 from .normalisation.normalisation import normalise_images
 from .cfg.create_config import create_config, validate_config, SUPPORTED_IMAGE_EXTENSIONS
+from .channel_mixing import batch_channel_combination
 
 __version__ = "0.1.1"
 
@@ -34,6 +35,7 @@ __all__ = [
     "read_images",
     "normalise_images",
     "resize_images",
+    "batch_channel_combination",
     # Normalisation module
     "NormalisationMethod",
     "normalise_image",

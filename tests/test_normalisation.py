@@ -474,7 +474,7 @@ class TestNormaliseImageIntegration:
 
         result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
-        # Should use center region for normalization, not global max
+        # Should use center region for normalisation, not global max
 
 
 class TestNormalisationRobustness:
