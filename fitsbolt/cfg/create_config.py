@@ -37,9 +37,16 @@ def create_config(
     norm_maximum_value=None,
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
+    norm_log_scale_a=1000.0,
     norm_crop_for_maximum_value=None,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
+    norm_zscale_n_samples=1000,
+    norm_zscale_contrast=0.25,
+    norm_zscale_max_reject=0.5,
+    norm_zscale_min_pixels=5,
+    norm_zscale_krej=2.5,
+    norm_zscale_max_iter=5,
     log_level="WARNING",
     force_dtype=True,
 ):
@@ -60,13 +67,25 @@ def create_config(
 
         norm_maximum_value (type, optional): Maximum value for normalisation. Defaults to None implying dynamic.
         norm_minimum_value (type, optional): Minimum value for normalisation. Defaults to None implying dynamic.
-        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
-                            Defaults to False.
         norm_crop_for_maximum_value (type, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
-                                            should have the length of n_output_channels or 1. Defaults to [0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
-                                            should have the length of n_output_channels or 1. Defaults to [99.8].
+
+        Default Log settings
+            norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
+                                Defaults to False.
+            norm_log_scale_a (float, optional): Scale factor for astropy log_stretch. Defaults to 1000.0.
+        Default Asinh settings
+            norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [0.7].
+            norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [99.8].
+        Default ZScale settings (from astropy ZScaleInterval):
+            norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
+            norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
+            norm_zscale_max_reject (float, optional): Maximum rejection fraction for zscale normalisation. Defaults to 0.5.
+            norm_zscale_min_pixels (int, optional): Minimum number of pixels that must remain after rejection for
+                                                    zscale normalisation. Defaults to 5.
+            norm_zscale_krej (float, optional): The number of sigma used for the rejection. Defaults to 2.5.
+            norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
         log_level (str, optional): Logging level. Defaults to "SUCCESS".
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
                             like channel combination. Defaults to True.
@@ -95,11 +114,27 @@ def create_config(
     )
     # Bool, if False assumes min value to be 0 or cfg.normalisation.minimum_value if not None
     cfg.normalisation.log_calculate_minimum_value = norm_log_calculate_minimum_value
+    cfg.normalisation.log_scale_a = norm_log_scale_a  # float, scale factor for astropy log_stretch
     # only used if cfg.normalisation_method == NormalisationMethod.ASINH:
     # asinh_scale list of 3 floats > 0, defining the scale for each channel (lower = higher stretch):
     cfg.normalisation.asinh_scale = norm_asinh_scale
     # asinh_clip list of 3 floats in ]0.,100.], defining the clip for each channel:
     cfg.normalisation.asinh_clip = norm_asinh_clip
+
+    # ZSCALE settings
+    cfg.normalisation.zscale = DotMap()
+    cfg.normalisation.zscale.n_samples = norm_zscale_n_samples  # int, number of samples for zscale
+    cfg.normalisation.zscale.contrast = norm_zscale_contrast  # float, contrast for zscale
+    cfg.normalisation.zscale.max_reject = (
+        norm_zscale_max_reject  # float, maximum rejection fraction for zscale
+    )
+    cfg.normalisation.zscale.min_pixels = (
+        norm_zscale_min_pixels  # int, minimum number of pixels for zscale
+    )
+    cfg.normalisation.zscale.krej = norm_zscale_krej  # float, number of sigma for zscale
+    cfg.normalisation.zscale.max_iter = (
+        norm_zscale_max_iter  # int, maximum number of iterations for zscale
+    )
 
     # FITS file handling settings
     # Extension(s) to use when loading FITS files (can be int, string, or list of int/string)

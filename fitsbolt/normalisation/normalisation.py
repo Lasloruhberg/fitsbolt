@@ -135,6 +135,7 @@ def _log_normalisation(data, cfg):
             otherwise set to 0 or cfg.normalisation.minimum_value if set
             cfg.normalisation.crop_for_maximum_value (Tuple[int, int], optional): Width and height to crop around the center,
             to calculate the maximum value in
+            cfg.normalisation.log_a (float): a parameter of astropys log stretch, default 1000.0
             cfg.output_dtype: The desired output data type
 
     Returns:
@@ -150,10 +151,18 @@ def _log_normalisation(data, cfg):
 
     maximum = _compute_max_value(data, cfg=cfg)
     if minimum < maximum:
-        norm = ImageNormalize(data, vmin=minimum, vmax=maximum, stretch=LogStretch(), clip=True)
+        norm = ImageNormalize(
+            data,
+            vmin=minimum,
+            vmax=maximum,
+            stretch=LogStretch(a=cfg.normalisation.log_a),
+            clip=True,
+        )
     else:
         warnings.warn("Image maximum is not larger than minimum, using linear normalisation")
-        norm = ImageNormalize(data, vmin=None, vmax=None, stretch=LogStretch(), clip=True)
+        norm = ImageNormalize(
+            data, vmin=None, vmax=None, stretch=LogStretch(a=cfg.normalisation.log_a), clip=True
+        )
     img_normalised = norm(data)  # range 0,1
     # Convert back to uint8 range
     return _type_conversion(img_normalised, cfg)
@@ -204,7 +213,19 @@ def _zscale_normalisation(data, cfg):
         return _conversiononly_normalisation(data, cfg)
 
     # Min Max value do not apply, also no constrain to center
-    norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=LinearStretch(), clip=True)
+    norm = ImageNormalize(
+        data,
+        interval=ZScaleInterval(
+            n_samples=cfg.normalisation.zscale.n_samples,
+            contrast=cfg.normalisation.zscale.contrast,
+            max_reject=cfg.normalisation.zscale.max_reject,
+            min_npixels=cfg.normalisation.zscale.min_npixels,
+            krej=cfg.normalisation.zscale.krej,
+            max_iterations=cfg.normalisation.zscale.max_iterations,
+        ),
+        stretch=LinearStretch(),
+        clip=True,
+    )
     img_normalised = norm(data)  # range 0,1
     if np.max(img_normalised) > np.min(img_normalised):
         # Convert back to specified dtype
@@ -420,10 +441,17 @@ def normalise_images(
     num_workers=4,
     norm_maximum_value=None,
     norm_minimum_value=None,
-    norm_log_calculate_minimum_value=False,
     norm_crop_for_maximum_value=None,
+    norm_log_calculate_minimum_value=False,
+    norm_log_scale_a=1000.0,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
+    norm_zscale_n_samples=1000,
+    norm_zscale_contrast=0.25,
+    norm_zscale_max_reject=0.5,
+    norm_zscale_min_pixels=5,
+    norm_zscale_krej=2.5,
+    norm_zscale_max_iter=5,
     desc="Normalising images",
     show_progress=True,
     log_level="WARNING",
@@ -438,14 +466,26 @@ def normalise_images(
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
         norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None.
         norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None.
-        norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value when log scaling
-                                                (normally defaults to 0). Defaults to False.
-        norm_crop_for_maximum_value (tuple, optional): Crops the image for maximum value. Defaults to None.
-        norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
-                                            should have the length of n_channels or 1. Defaults to [0.7].
-        norm_asinh_clip (list, optional): Clip values for asinh normalisation,
-                                            should have the length of n_channels or 1. Defaults to [99.8].
-        filepaths (list): List of image filepaths to load
+        norm_crop_for_maximum_value (type, optional): Crops the image for maximum value. Defaults to None.
+
+        Default Log settings
+            norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
+                                Defaults to False.
+            norm_log_scale_a (float, optional): Scale factor for astropy log_stretch. Defaults to 1000.0.
+        Default Asinh settings
+            norm_asinh_scale (list, optional): Scale factors for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [0.7].
+            norm_asinh_clip (list, optional): Clip values for asinh normalisation,
+                                                should have the length of n_output_channels or 1. Defaults to [99.8].
+        Default ZScale settings (from astropy ZScaleInterval):
+            norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
+            norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
+            norm_zscale_max_reject (float, optional): Maximum rejection fraction for zscale normalisation. Defaults to 0.5.
+            norm_zscale_min_pixels (int, optional): Minimum number of pixels that must remain after rejection
+                                                    for zscale normalisation. Defaults to 5.
+            norm_zscale_krej (float, optional): The number of sigma used for the rejection. Defaults to 2.5.
+            norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
+
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
@@ -484,9 +524,16 @@ def normalise_images(
         norm_maximum_value=norm_maximum_value,
         norm_minimum_value=norm_minimum_value,
         norm_log_calculate_minimum_value=norm_log_calculate_minimum_value,
+        norm_log_scale_a=norm_log_scale_a,
         norm_crop_for_maximum_value=norm_crop_for_maximum_value,
         norm_asinh_scale=norm_asinh_scale,
         norm_asinh_clip=norm_asinh_clip,
+        norm_zscale_n_samples=norm_zscale_n_samples,
+        norm_zscale_contrast=norm_zscale_contrast,
+        norm_zscale_max_reject=norm_zscale_max_reject,
+        norm_zscale_min_pixels=norm_zscale_min_pixels,
+        norm_zscale_krej=norm_zscale_krej,
+        norm_zscale_max_iter=norm_zscale_max_iter,
         log_level=log_level,
     )
 

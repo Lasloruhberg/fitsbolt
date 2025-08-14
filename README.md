@@ -388,7 +388,19 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **norm_maximum_value**: Maximum value for normalisation (overrides auto-detection)
 - **norm_minimum_value**: Minimum value for normalisation (overrides auto-detection)
 - **norm_crop_for_maximum_value**: Tuple (height, width) to crop around center for max value calculation
-- **norm_log_calculate_minimum_value**: Whether to calculate minimum for log scaling (default: False)
-- **norm_asinh_scale**: Channel-wise stretch factors for asinh normalisation (default: [0.7, 0.7, 0.7])
-- **norm_asinh_clip**: Channel-wise percentile clipping for asinh normalisation (default: [99.8, 99.8, 99.8])
 
+##### Log Normalisation Parameters
+- **norm_log_calculate_minimum_value**: Whether to calculate minimum for log scaling (default: False)
+- **norm_log_scale_a**: Scale factor 'a' for astropy LogStretch (default: 1000.0)
+
+##### Asinh Normalisation Parameters
+- **norm_asinh_scale**: Channel-wise stretch factors for asinh normalisation (default: \[0.7\])
+- **norm_asinh_clip**: Channel-wise percentile clipping for asinh normalisation (default: \[99.8\])
+
+##### ZScale Normalisation Parameters
+- **norm_zscale_n_samples**: Number of samples for zscale normalisation (default: 1000)
+- **norm_zscale_contrast**: Contrast for zscale normalisation (default: 0.25)
+- **norm_zscale_max_reject**: Maximum rejection fraction for zscale normalisation (default: 0.5)
+- **norm_zscale_min_pixels**: Minimum number of pixels that must remain after rejection (default: 5)
+- **norm_zscale_krej**: Number of sigma used for rejection (default: 2.5)
+- **norm_zscale_max_iter**: Maximum number of iterations for zscale normalisation (default: 5)
