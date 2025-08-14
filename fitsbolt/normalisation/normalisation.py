@@ -93,7 +93,7 @@ def _compute_max_value(data, cfg=None):
         ), f"Crop size must be positive integers currently {cfg.normalisation.crop_for_maximum_value}"
         # make cutout of the image and compute max value
         img_centre_region = _crop_center(data, h, w)
-        max_value = np.max(img_centre_region)
+        max_value = np.nanmax(img_centre_region)
 
     else:
         # Compute the maximum value of the image
@@ -156,6 +156,36 @@ def _log_normalisation(data, cfg):
         norm = ImageNormalize(data, vmin=None, vmax=None, stretch=LogStretch(), clip=True)
     img_normalised = norm(data)  # range 0,1
     # Convert back to uint8 range
+    return _type_conversion(img_normalised, cfg)
+
+
+def _linear_normalisation(data, cfg):
+    """A linear normalisation
+
+    Args:
+        data (numpy array): Input image array, ideally a float32 or float64 array, can be high dynamic range
+        cfg (DotMap or None): Configuration with optional normalisation values.
+            cfg.normalisation.log_calculate_minimum_value (bool): If True, calculate the minimum value of the image,
+            otherwise set to 0 or cfg.normalisation.minimum_value if set
+            cfg.normalisation.crop_for_maximum_value (Tuple[int, int], optional): Width and height to crop around the center,
+            to calculate the maximum value in
+            cfg.output_dtype: The desired output data type
+
+    Returns:
+        numpy array: A normalised image in the specified output data type
+    """
+
+    minimum = _compute_min_value(data, cfg=cfg)
+    maximum = _compute_max_value(data, cfg=cfg)
+    if minimum < maximum:
+        norm = ImageNormalize(data, vmin=minimum, vmax=maximum, stretch=LinearStretch(), clip=True)
+    else:
+        warnings.warn(
+            "Image maximum is not larger than minimum, only doing conversion normalisation"
+        )
+        return _conversiononly_normalisation(data, cfg)
+    img_normalised = norm(data)  # range 0,1
+    # Convert back to type range
     return _type_conversion(img_normalised, cfg)
 
 
@@ -370,6 +400,8 @@ def _normalise_image(data, cfg):
     # execute normalisations based on enum
     if method == NormalisationMethod.LOG:
         return _log_normalisation(data, cfg=cfg)
+    if method == NormalisationMethod.LINEAR:
+        return _linear_normalisation(data, cfg=cfg)
     elif method == NormalisationMethod.CONVERSION_ONLY:
         return _conversiononly_normalisation(data, cfg=cfg)
     elif method == NormalisationMethod.ZSCALE:

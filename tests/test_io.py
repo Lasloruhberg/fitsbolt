@@ -272,7 +272,7 @@ class TestImageIO:
         # Test with RGB input (should remain RGB)
         rgb_data = np.zeros((50, 50, 3), dtype=np.uint8)
         rgb_data[10:40, 10:40, 0] = 200  # Red channel
-
+        test_config.n_expected_channels = 3
         processed = _process_image(
             rgb_data,
             test_config,
@@ -288,10 +288,13 @@ class TestImageIO:
         rgba_data = np.zeros((50, 50, 4), dtype=np.uint8)
         rgba_data[10:40, 10:40, :3] = [255, 128, 64]  # RGB values
         rgba_data[10:40, 10:40, 3] = 255  # Alpha
-
+        channel_comb = np.ones((3, 4))
+        test_config.channel_combination = channel_comb
+        cfg = self.recreate_config(test_config, n_output_channels=4)
+        cfg.n_expected_channels = 4  # Simulates read_images
         processed = _process_image(
             rgba_data,
-            test_config,
+            cfg,
         )
         assert processed.shape == (
             test_config.size[0],
@@ -304,9 +307,9 @@ class TestImageIO:
         """Test process_image with single channel output."""
         gray_data = np.zeros((50, 50), dtype=np.uint8)
         gray_data[10:40, 10:40] = 200
-
         # Create config for single channel output to avoid RGB conversion
         cfg = self.recreate_config(test_config, n_output_channels=1)
+        cfg.n_expected_channels = 1  # simulates read_images
         processed = _process_image(gray_data, cfg)
         assert (
             len(processed.shape) == 2
@@ -316,7 +319,9 @@ class TestImageIO:
     def test_process_image_with_resizing(self, test_config):
         """Test process_image with resizing."""
         # Use recreate_config to properly set the size
+
         cfg = self.recreate_config(test_config, size=(64, 64))
+        cfg.n_expected_channels = 3  # simulates_read
 
         rgb_data = np.zeros((100, 100, 3), dtype=np.uint8)
         rgb_data[25:75, 25:75, 0] = 255  # Red square
@@ -337,6 +342,9 @@ class TestImageIO:
         except Exception:
             pass
         # Test with FITS image
+        test_config.n_output_channels = 1
+        test_config.fits_extension = 0
+        test_config.channel_combination = np.eye(1)
         fits_img = _load_image(self.fits_path, test_config)
         assert fits_img.ndim >= 2
         assert fits_img.dtype == np.uint8
@@ -507,6 +515,7 @@ class TestImageIO:
         assert img.shape == (50, 50, 3), "Should read all 3 channels"
 
         # Now process with RGB conversion
+        test_config.n_expected_channels = 3  # Simulates read_images
         processed = _process_image(
             img,
             test_config,
@@ -533,9 +542,7 @@ class TestImageIO:
 
         # Set config to use all 4 extensions
         # Setup channel_combination array for first 3 channels
-        channel_comb = np.zeros((3, 4))  # 3 output channels x 4 input extensions
-        for i in range(3):  # Only map the first 3 channels
-            channel_comb[i, i] = 1
+        channel_comb = np.eye(3, 4)  # 3 output channels x 4 input extensions
         test_config.channel_combination = channel_comb
 
         # This should work now
@@ -553,7 +560,10 @@ class TestImageIO:
             test_config.n_output_channels,
         ), f"Should read data with shape matching n_output_channels={test_config.n_output_channels}, got {img_four.shape}"
 
-        # Now process with RGB conversion
+        # Now process (has a channel combination in it so a bit uncessary)
+        test_config.n_expected_channels = 3  # Simulates read_images
+        channel_comb = np.eye(3, 3)  # Identity matrix for 3 output channels, drops 4th
+        test_config.channel_combination = channel_comb
         processed_four = _process_image(
             img_four,
             test_config,
@@ -636,12 +646,14 @@ class TestImageIO:
                 fits_extension=[0, 1],
                 n_output_channels=3,
                 channel_combination=channel_comb,
-            )
+            )  # here read_images will already handle the channel combination
 
             # Image should have shape (50, 50, 3) after reading since n_output_channels=3
             assert img.shape == (50, 50, 3), "Should have n_output_channels=3 dimensions"
 
-            # Process with RGB conversion - should work by filling in a zero channel
+            # Process with RGB conversion
+            test_config.n_expected_channels = 3  # Simulates read_images
+            test_config.channel_combination = np.eye(3, 3)
             processed = _process_image(
                 img,
                 test_config,
@@ -740,6 +752,52 @@ class TestImageIO:
                     channel_combination=channel_comb,
                     fits_extension=[0, 1, 2],
                 )
+            # Test 6: Using two extensions by index, skip combination in read
+            # Create channel_combination matrix for 2 channels to 3 output channels
+            channel_comb = np.zeros(
+                (3, 2), dtype=np.float32
+            )  # 3 output channels x 2 input extensions
+            channel_comb[0, 0] = 1  # Map first extension to R
+            channel_comb[1, 1] = 1  # Map second extension to G
+            channel_comb[2, 0] = (
+                0.5  # Map first extension to B with half intensity (so there is no 0 sum)
+            )
+            # B channel will remain zeros
+            img = read_images(
+                temp_fits_path,
+                fits_extension=[0, 1],
+                n_output_channels=3,
+                channel_combination=channel_comb,
+                read_only=True,
+            )  # here read_images will already handle the channel combination
+
+            # Image should have shape (50, 50, 3) after reading since n_output_channels=3
+            assert img.shape == (50, 50, 2), "Should have n_output_channels=3 dimensions"
+            channel_comb = np.zeros((3, 2))  # 3 output channels x 2 input extensions
+            channel_comb[0, 0] = 1  # Map PRIMARY to R
+            channel_comb[1, 1] = 1  # Map RED to G
+            channel_comb[2, 0] = (
+                0.5  # Map first extension to B with half intensity (so there is no 0 sum)
+            )
+            # Process with RGB conversion
+            test_config.n_expected_channels = 2  # Simulates read_images
+            test_config.channel_combination = channel_comb
+            processed = _process_image(
+                img,
+                test_config,
+            )
+
+            # Check that we have 3 channels now
+            assert processed.shape == (
+                test_config.size[0],
+                test_config.size[1],
+                test_config.n_output_channels,
+            ), f"Should have {test_config.n_output_channels} channels after RGB conversion, got {processed.shape}"
+
+            # At least one channel should have non-zero data
+            assert np.any(processed[:, :, 0] > 0) or np.any(
+                processed[:, :, 1] > 0
+            ), "At least one channel should have data"
 
         finally:
             # Clean up temporary files
@@ -862,7 +920,7 @@ class TestImageIO:
                 fits_extension=test_cfg.fits_extension,
             )
             assert img.shape == (50, 50, 3), "Should read all 3 channels"
-
+            test_cfg.n_expected_channels = 3  # simulates read_images
             processed = _process_image(
                 img,
                 test_cfg,
@@ -942,7 +1000,11 @@ class TestImageIO:
                 img[:, :, 2], 3.5, atol=1e-5
             ), "Channel 2 should be weighted average 3.5"
 
-            # Process the image
+            # Process the image (I already combined channels)
+            test_config.channel_combination = np.eye(3, 3)
+            test_config.n_expected_channels = 3
+            test_config.output_dtype = np.uint8
+            test_config.normalisation_method = NormalisationMethod.LINEAR
             processed = _process_image(
                 img,
                 test_config,

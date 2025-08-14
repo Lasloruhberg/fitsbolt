@@ -35,32 +35,44 @@ def _process_image(
     """
     Process an image array by normalising and resizing it.
     Args:
-        image (numpy.ndarray): Image array to process
+        image (numpy.ndarray): Image array to process H,W or H,W,C
         cfg: Configuration object containing size, normalisation_method
         image_source (str): Source of the image for logging
     Returns:
-        numpy.ndarray: Processed image array as uint8
+        numpy.ndarray: Processed image array as uint8 (H,W or H,W,C)
     """
     try:
         logger.trace(f"Normalising image with setting {cfg.normalisation_method}")
+        # Expect a H,W,C image
+        im_is_2d = False
+        print(image)
+        if len(image.shape) == 2:
+            image = np.expand_dims(image, axis=-1)
+            im_is_2d = True
         # first resize, then normalise, then combine channels
-        image = _resize_image(image, cfg)
-
+        image = _resize_image(image, cfg, do_type_conversion=False)  # no type conversion here
+        print(cfg)
         image = _normalise_image(image, cfg=cfg)
-
+        print(f"Normalised image with dtype {image.dtype} and shape {image}")
         original_dtype = image.dtype
         # _read image has no channel combination anymore and channel_combination must be done manually now
-        recompute_config_channel_combination(cfg)
+        channel_combination_exists = cfg.get("channel_combination") is not None
+        if not channel_combination_exists:
+            recompute_config_channel_combination(cfg)
+
         # batch expects a 1, H,W,C image
         image = np.expand_dims(image, axis=0)
         image = batch_channel_combination(
             image,
             cfg.channel_combination,
             original_dtype,
-            cfg.force_dtype,
+            force_dtype=True,
         )
         # want to squeeze the image axis again
         image = np.squeeze(image, axis=0)
+        if im_is_2d:
+            image = np.squeeze(image, axis=-1)
+            # if image was 2D, we want to return it like this
 
         return image
 

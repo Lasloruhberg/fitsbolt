@@ -24,6 +24,7 @@ class NormalisationMethod(IntEnum):
     LOG = 1
     ZSCALE = 2
     ASINH = 3
+    LINEAR = 4
 
     @classmethod
     def get_options(cls):
@@ -33,9 +34,10 @@ class NormalisationMethod(IntEnum):
             ("LogStretch", cls.LOG),
             ("ZscaleInterval", cls.ZSCALE),
             ("Asinh", cls.ASINH),
+            ("Linear", cls.LINEAR),
         ]
 
     @classmethod
     def get_test_methods(cls):
         """Returns all methods for testing purposes."""
-        return [cls.CONVERSION_ONLY, cls.LOG, cls.ZSCALE, cls.ASINH]
+        return [cls.CONVERSION_ONLY, cls.LOG, cls.ZSCALE, cls.ASINH, cls.LINEAR]

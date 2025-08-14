@@ -169,6 +169,7 @@ class TestNormalisationMethod:
             ("LogStretch", 1),
             ("ZscaleInterval", 2),
             ("Asinh", 3),
+            ("Linear", 4),
         ]
         assert options == expected
 
@@ -180,6 +181,7 @@ class TestNormalisationMethod:
             NormalisationMethod.LOG,
             NormalisationMethod.ZSCALE,
             NormalisationMethod.ASINH,
+            NormalisationMethod.LINEAR,
         ]
         assert methods == expected
 

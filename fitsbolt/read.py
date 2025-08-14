@@ -538,7 +538,6 @@ def _read_image(filepath, cfg):
         # no previous image read, try to gather what the value should be
         if cfg.fits_extension is not None:
             if isinstance(cfg.fits_extension, list):
-                # TODO check this in multi fits mode
                 n_expected_channels = [len(cfg.fits_extension)]
             else:
                 # Single extension (int or string), expect 1 channel
