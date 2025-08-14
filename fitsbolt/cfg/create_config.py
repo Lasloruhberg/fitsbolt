@@ -125,16 +125,13 @@ def create_config(
     cfg.normalisation.zscale = DotMap()
     cfg.normalisation.zscale.n_samples = norm_zscale_n_samples  # int, number of samples for zscale
     cfg.normalisation.zscale.contrast = norm_zscale_contrast  # float, contrast for zscale
-    cfg.normalisation.zscale.max_reject = (
-        norm_zscale_max_reject  # float, maximum rejection fraction for zscale
-    )
-    cfg.normalisation.zscale.min_pixels = (
-        norm_zscale_min_pixels  # int, minimum number of pixels for zscale
-    )
+    # float, maximum rejection fraction for zscale:
+    cfg.normalisation.zscale.max_reject = norm_zscale_max_reject
+    # int, minimum number of pixels for zscale:
+    cfg.normalisation.zscale.min_npixels = norm_zscale_min_pixels
     cfg.normalisation.zscale.krej = norm_zscale_krej  # float, number of sigma for zscale
-    cfg.normalisation.zscale.max_iter = (
-        norm_zscale_max_iter  # int, maximum number of iterations for zscale
-    )
+    # int, maximum number of iterations for zscale:
+    cfg.normalisation.zscale.max_iterations = norm_zscale_max_iter
 
     # FITS file handling settings
     # Extension(s) to use when loading FITS files (can be int, string, or list of int/string)

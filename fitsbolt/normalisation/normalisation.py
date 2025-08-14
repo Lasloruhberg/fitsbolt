@@ -135,7 +135,7 @@ def _log_normalisation(data, cfg):
             otherwise set to 0 or cfg.normalisation.minimum_value if set
             cfg.normalisation.crop_for_maximum_value (Tuple[int, int], optional): Width and height to crop around the center,
             to calculate the maximum value in
-            cfg.normalisation.log_a (float): a parameter of astropys log stretch, default 1000.0
+            cfg.normalisation.log_scale_a (float): a parameter of astropys log stretch, default 1000.0
             cfg.output_dtype: The desired output data type
 
     Returns:
@@ -155,13 +155,17 @@ def _log_normalisation(data, cfg):
             data,
             vmin=minimum,
             vmax=maximum,
-            stretch=LogStretch(a=cfg.normalisation.log_a),
+            stretch=LogStretch(a=cfg.normalisation.log_scale_a),
             clip=True,
         )
     else:
         warnings.warn("Image maximum is not larger than minimum, using linear normalisation")
         norm = ImageNormalize(
-            data, vmin=None, vmax=None, stretch=LogStretch(a=cfg.normalisation.log_a), clip=True
+            data,
+            vmin=None,
+            vmax=None,
+            stretch=LogStretch(a=cfg.normalisation.log_scale_a),
+            clip=True,
         )
     img_normalised = norm(data)  # range 0,1
     # Convert back to uint8 range

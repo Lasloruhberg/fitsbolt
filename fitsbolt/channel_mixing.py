@@ -22,11 +22,12 @@ def batch_channel_combination(
 ) -> np.ndarray:
     """
     Combine multiple channels with specified weights.
+    Will typically return a float array, unless output_dtype is set.
 
     Args:
-        images: Array of (n_images, H, W, n_extensions)
-        channel_combination: Array of n_output_channels x n_extensions
-        original_dtype=
+        images (np.ndarray): Array of (n_images, H, W, n_extensions)
+        channel_combination (np.ndarray): Array of n_output_channels x n_extensions
+        original_dtype (optional, np.dtype): Original data type of the images, to enforce
 
     Returns:
         Combined image array of n_images, H, W, n_output_channels
