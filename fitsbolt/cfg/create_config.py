@@ -147,7 +147,7 @@ def create_config(
     cfg.normalisation.zscale.max_iterations = norm_zscale_max_iter
 
     # MTF settings
-    cfg.normalisation.mtf = DotMap()
+    cfg.normalisation.midtones = DotMap()
     # float, in ]0., 100.] : percentile for MTF applied to each channel
     cfg.normalisation.midtones.percentile = norm_midtones_percentile
     # float in [0,1], desired mean for MTF
@@ -263,7 +263,7 @@ def _return_required_and_optional_keys():
         "normalisation.zscale.min_npixels": [int, 1, None, True, None],
         "normalisation.zscale.krej": [float, 0.0001, None, True, None],
         "normalisation.zscale.max_iterations": [int, 1, 100, True, None],
-        "normalisation.mtf": ["special_DotMap", None, None, True, None],
+        "normalisation.midtones": ["special_DotMap", None, None, True, None],
         "normalisation.midtones.percentile": [float, 0.0, 100.0, True, None],
         "normalisation.midtones.desired_mean": [float, 0.0, 1.0, True, None],
         "normalisation.midtones.crop": ["special_crop", None, None, True, None],
