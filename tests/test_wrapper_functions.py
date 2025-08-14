@@ -73,6 +73,22 @@ class TestWrapperFunctionEdgeCases:
         with pytest.raises(Exception):  # Should raise FileNotFoundError or similar
             read_images("/totally/nonexistent/file.jpg", show_progress=False)
 
+    def test_read_images_multiple_jpg(self):
+        """Test the specific warning case in read_images where multiple images are loaded but single was requested."""
+        file_paths = [self.rgb_path, self.rgb_path]  # Valid files that will load
+        results = read_images(file_paths, show_progress=False)
+        assert len(results) == 2, "Expected two images to be loaded"
+        for i in range(0, 2):
+            assert results[i].shape[:2] == (100, 100), "Should be at original size"
+
+    def test_read_images_multiple_jpg_grey(self):
+        """Test the specific warning case in read_images where multiple images are loaded but single was requested."""
+        file_paths = [self.gray_path, self.gray_path]  # Valid files that will load
+        results = read_images(file_paths, show_progress=False)
+        assert len(results) == 2, "Expected two images to be loaded"
+        for i in range(0, 2):
+            assert results[i].shape[:2] == (100, 100), "Should be at original size"
+
     def test_read_images_warning_multiple_loaded_single_requested(self):
         """Test the specific warning case in read_images where multiple images are loaded but single was requested."""
         # This tests the specific warning branch in lines 104-107 of read.py
