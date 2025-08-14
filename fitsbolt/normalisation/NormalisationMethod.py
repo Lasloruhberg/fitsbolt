@@ -25,6 +25,7 @@ class NormalisationMethod(IntEnum):
     ZSCALE = 2
     ASINH = 3
     LINEAR = 4
+    MIDTONES = 5
 
     @classmethod
     def get_options(cls):
@@ -35,9 +36,10 @@ class NormalisationMethod(IntEnum):
             ("ZscaleInterval", cls.ZSCALE),
             ("Asinh", cls.ASINH),
             ("Linear", cls.LINEAR),
+            ("Midtones", cls.MIDTONES),
         ]
 
     @classmethod
     def get_test_methods(cls):
         """Returns all methods for testing purposes."""
-        return [cls.CONVERSION_ONLY, cls.LOG, cls.ZSCALE, cls.ASINH, cls.LINEAR]
+        return [cls.CONVERSION_ONLY, cls.LOG, cls.ZSCALE, cls.ASINH, cls.LINEAR, cls.MIDTONES]

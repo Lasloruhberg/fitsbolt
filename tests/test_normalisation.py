@@ -170,6 +170,7 @@ class TestNormalisationMethod:
             ("ZscaleInterval", 2),
             ("Asinh", 3),
             ("Linear", 4),
+            ("Midtones", 5),
         ]
         assert options == expected
 
@@ -182,6 +183,7 @@ class TestNormalisationMethod:
             NormalisationMethod.ZSCALE,
             NormalisationMethod.ASINH,
             NormalisationMethod.LINEAR,
+            NormalisationMethod.MIDTONES,
         ]
         assert methods == expected
 

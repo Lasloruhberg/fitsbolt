@@ -395,6 +395,108 @@ def _asinh_normalisation(data, cfg):
         return _conversiononly_normalisation(data, cfg=cfg)
 
 
+def _apply_MTF_on_normalised_data(x, m):
+    """Apply the midtones normalisation
+
+    Args:
+        x (np.ndarray): _description_
+        m (float): _description_
+
+    Returns:
+        _type_: _description_
+    """
+
+    assert x.max() <= 1
+    assert x.min() >= 0
+    y = np.zeros_like(x)
+    mask0 = x == 0
+    maskm = x == m
+    mask1 = x == 1
+    mask_else = ~(mask0 | maskm | mask1)
+    # these remain fixed
+    y[mask0] = 0
+    y[maskm] = 0.5
+    y[mask1] = 1
+    # ..and everything else gets curved
+    x_else = x[mask_else]
+
+    # shape of the curve
+    numerator = (m - 1) * x_else
+    denominator = (2 * m - 1) * x_else - m
+    # apply the curve
+    y[mask_else] = numerator / denominator
+    return y  # curved values
+
+
+def _find_m_for_mean(normalised_data, cfg):
+    """Find the midtones balance parameter m for the given normalised data."""
+    if cfg.normalisation.mtf.crop is not None:
+        h, w = cfg.normalisation.mtf.crop
+        assert (
+            h > 0 and w > 0
+        ), f"Crop size must be positive integers currently {cfg.normalisation.mtf.crop}"
+        # make cutout of the image and compute max value
+        normalised_data_selected = _crop_center(normalised_data, h, w)
+    x = np.mean(normalised_data_selected)
+    alpha = cfg.normalisation.mtf.desired_mean
+    return (x - alpha * x) / (x - 2 * alpha * x + alpha)
+
+
+def _mtf_normalisation(data, cfg):
+    """Compute the Midtones Transfer Function (MTF) for given x and m.
+    This is similar to automatically set the "curves" tool from e.g. photoshop,
+    where m sets the curve and MTF is the application of the curve.
+
+    Args:
+        x (np.ndarray): The input image data.
+        m (float): The midtones balance parameter.
+
+    Returns:
+        np.ndarray: The transformed image data.
+    """
+    # Get initial min and max and clip values if manual are set
+    max_value = _compute_max_value(data, cfg)
+    min_value = _compute_min_value(data, cfg)
+    data = np.clip(data, min_value, max_value)
+
+    data_is_2d = False
+    if data.ndim == 2:
+        # create dummy channel index
+        data_is_2d = True
+        data = np.expand_dims(data, axis=-1)
+    # create a for loop over the channel to calculate m and apply MTF on a channel basis
+    for c in range(data.shape[-1]):
+        # do a channel-wise percentile clip
+        if cfg.normalisation.mtf.percentile:
+            data[..., c] = np.clip(
+                data[..., c],
+                data[..., c].nanmin(),
+                np.percentile(data[..., c], cfg.normalisation.mtf.percentile),
+            )
+        # Find the appropriate midtones balance parameter m
+        max_value = _compute_max_value(data[..., c], cfg)
+        min_value = _compute_min_value(data[..., c], cfg)
+        normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
+
+        m = _find_m_for_mean(normalised_channel, cfg)
+        # Apply the MTF to the image
+        transformed_channel = _apply_MTF_on_normalised_data(normalised_channel, m)
+
+        data[..., c] = transformed_channel
+    if data_is_2d:
+        data = np.squeeze(data, axis=-1)
+    # scale entire image to 0,1 and do type conversion
+    max_value = _compute_max_value(data, cfg)
+    min_value = _compute_min_value(data, cfg)
+    if min_value < max_value:
+        return _type_conversion((data - min_value) / (max_value - min_value), cfg)
+    else:
+
+        warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
+
+        return _conversiononly_normalisation(data, cfg=cfg)
+
+
 def _normalise_image(data, cfg):
     """Normalises all images based on the selected normalisation option
 
@@ -456,6 +558,9 @@ def normalise_images(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
+    norm_mtf_percentile=99.8,
+    norm_mtf_desired_mean=0.2,
+    norm_mtf_crop=None,
     desc="Normalising images",
     show_progress=True,
     log_level="WARNING",
@@ -468,10 +573,10 @@ def normalise_images(
         normalisation_method (NormalisationMethod, optional): Normalisation method to use.
                                                 Defaults to NormalisationMethod.CONVERSION_ONLY.
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
-        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None.
-        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None.
-        norm_crop_for_maximum_value (type, optional): Crops the image for maximum value. Defaults to None.
-
+        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None implying dynamic.
+        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None implying dynamic.
+        norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
+                                    the maximum value inside. Defaults to None.
         Default Log settings
             norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
                                 Defaults to False.
@@ -489,6 +594,12 @@ def normalise_images(
                                                     for zscale normalisation. Defaults to 5.
             norm_zscale_krej (float, optional): The number of sigma used for the rejection. Defaults to 2.5.
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
+
+        Default MTF settings:
+            norm_mtf_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.]. Defaults to 99.8.
+            norm_mtf_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_mtf_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
+                                            Defaults to None.
 
         desc (str): Description for the progress bar
         show_progress (bool): Whether to show a progress bar
@@ -538,6 +649,9 @@ def normalise_images(
         norm_zscale_min_pixels=norm_zscale_min_pixels,
         norm_zscale_krej=norm_zscale_krej,
         norm_zscale_max_iter=norm_zscale_max_iter,
+        norm_mtf_percentile=norm_mtf_percentile,
+        norm_mtf_desired_mean=norm_mtf_desired_mean,
+        norm_mtf_crop=norm_mtf_crop,
         log_level=log_level,
     )
 

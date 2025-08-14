@@ -47,6 +47,9 @@ def create_config(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
+    norm_mtf_percentile=99.8,
+    norm_mtf_desired_mean=0.2,
+    norm_mtf_crop=None,
     log_level="WARNING",
     force_dtype=True,
 ):
@@ -65,9 +68,10 @@ def create_config(
                             1:1 if applicable or 1:n_output if only 1 input is provided.
         num_workers (int, optional): Number of worker threads for data loading. Defaults to 4.
 
-        norm_maximum_value (type, optional): Maximum value for normalisation. Defaults to None implying dynamic.
-        norm_minimum_value (type, optional): Minimum value for normalisation. Defaults to None implying dynamic.
-        norm_crop_for_maximum_value (type, optional): Crops the image for maximum value. Defaults to None.
+        norm_maximum_value (float, optional): Maximum value for normalisation. Defaults to None implying dynamic.
+        norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None implying dynamic.
+        norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
+                                    the maximum value inside. Defaults to None.
 
         Default Log settings
             norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
@@ -86,9 +90,17 @@ def create_config(
                                                     zscale normalisation. Defaults to 5.
             norm_zscale_krej (float, optional): The number of sigma used for the rejection. Defaults to 2.5.
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
+
+        Default MTF settings:
+            norm_mtf_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.]. Defaults to 99.8.
+            norm_mtf_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_mtf_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
+                                            Defaults to None.
+
         log_level (str, optional): Logging level. Defaults to "SUCCESS".
         force_dtype (bool, optional): If True, forces the output to maintain the original dtype after tensor operations
                             like channel combination. Defaults to True.
+
 
     Returns:
         _type_: _description_
@@ -132,6 +144,14 @@ def create_config(
     cfg.normalisation.zscale.krej = norm_zscale_krej  # float, number of sigma for zscale
     # int, maximum number of iterations for zscale:
     cfg.normalisation.zscale.max_iterations = norm_zscale_max_iter
+
+    # MTF settings
+    cfg.normalisation.mtf = DotMap()
+    # float, in ]0., 100.] : percentile for MTF applied to each channel
+    cfg.normalisation.mtf.percentile = norm_mtf_percentile
+    # float in [0,1], desired mean for MTF
+    cfg.normalisation.mtf.desired_mean = norm_mtf_desired_mean
+    cfg.normalisation.mtf.crop = norm_mtf_crop
 
     # FITS file handling settings
     # Extension(s) to use when loading FITS files (can be int, string, or list of int/string)
@@ -221,7 +241,7 @@ def _return_required_and_optional_keys():
         # Required special parameters
         "size": ["special_size", None, None, False, None],
         "normalisation_method": ["special_normalisation_method", None, None, False, None],
-        "normalisation": ["special_normalisation", None, None, False, None],
+        "normalisation": ["special_DotMap", None, None, False, None],
         "normalisation.asinh_scale": ["special_asinh_scale", None, None, False, None],
         "normalisation.asinh_clip": ["special_asinh_clip", None, None, False, None],
         "interpolation_order": [int, 0, 5, False, None],  # 0-5 for skimage interpolation"
@@ -229,10 +249,23 @@ def _return_required_and_optional_keys():
         # Optional numeric parameters
         "normalisation.maximum_value": [float, None, None, True, None],
         "normalisation.minimum_value": [float, None, None, True, None],
+        "normalisation.log_scale_a": [float, 0.0, None, False, None],
         # Optional special parameters
         "normalisation.crop_for_maximum_value": ["special_crop", None, None, True, None],
         "fits_extension": ["special_fits_extension", None, None, True, None],
         "channel_combination": ["special_channel_combination", None, None, True, None],
+        # further params
+        "normalisation.zscale": ["special_DotMap", None, None, True, None],
+        "normalisation.zscale.n_samples": [int, None, None, True, None],
+        "normalisation.zscale.contrast": [float, 0.0, 1.0, True, None],
+        "normalisation.zscale.max_reject": [float, 0.0, 1.0, True, None],
+        "normalisation.zscale.min_npixels": [int, 1, None, True, None],
+        "normalisation.zscale.krej": [float, 0.0001, None, True, None],
+        "normalisation.zscale.max_iterations": [int, 1, 100, True, None],
+        "normalisation.mtf": ["special_DotMap", None, None, True, None],
+        "normalisation.mtf.percentile": [float, 0.0, 100.0, True, None],
+        "normalisation.mtf.desired_mean": [float, 0.0, 1.0, True, None],
+        "normalisation.mtf.crop": ["special_crop", None, None, True, None],
     }
 
     return config_spec
@@ -398,7 +431,7 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     f"{param_name} must be a NormalisationMethod enum value, got {type(value).__name__}"
                 )
 
-        elif dtype == "special_normalisation":
+        elif dtype == "special_DotMap":
             if not isinstance(value, DotMap):
                 raise ValueError(f"{param_name} must be a DotMap, got {type(value).__name__}")
 
