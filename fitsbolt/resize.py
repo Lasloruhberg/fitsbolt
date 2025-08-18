@@ -120,6 +120,23 @@ def resize_image(
 
 
 def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
+    """Resize an image to the specified size using skimage's resize function.
+
+    Args:
+        image (np.ndarray): Image array to resize
+        cfg (Dict): Configuration dictionary containing resize parameters
+        output_dtype (type, optional): Desired output data type for the resized image. Defaults to None.
+                                        Overwrites the cfg parameter if set (used in image_loader.py's _process_image)
+        do_type_conversion (bool, optional): Whether to perform type conversion. Defaults to True.
+
+    Raises:
+        ValueError: If the image is empty.
+        ValueError: If the image cannot be resized.
+        ValueError: If the output dtype is not supported.
+
+    Returns:
+        np.ndarray: Resized image array
+    """
     # Simple resize that maintains uint8 type if requested
     if image.size == 0:
         logger.warning("Received an empty image, returning as is.")
