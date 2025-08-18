@@ -119,7 +119,7 @@ def resize_image(
     return _resize_image(image, cfg)
 
 
-def _resize_image(image, cfg, do_type_conversion=True):
+def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
     # Simple resize that maintains uint8 type if requested
     if image.size == 0:
         logger.warning("Received an empty image, returning as is.")
@@ -132,14 +132,19 @@ def _resize_image(image, cfg, do_type_conversion=True):
             order=cfg.interpolation_order if cfg.interpolation_order is not None else 1,
             preserve_range=True,
         )
-        if do_type_conversion and cfg.output_dtype is not None:
+        if do_type_conversion and (cfg.output_dtype is not None or output_dtype is not None):
+            if output_dtype:
+                target = output_dtype
+            else:
+                target = cfg.output_dtype
+
             # the resizing creates floats, so proper clipping and conversion is needed
-            if cfg.output_dtype == np.uint8:
+            if target == np.uint8:
                 image = np.clip(image, 0, np.iinfo(np.uint8).max).astype(np.uint8)
-            elif cfg.output_dtype == np.uint16:
+            elif target == np.uint16:
                 image = np.clip(image, 0, np.iinfo(np.uint16).max).astype(np.uint16)
-            elif image.dtype != cfg.output_dtype:
-                image = image.astype(cfg.output_dtype)
+            elif image.dtype != target:
+                image = image.astype(target)
     if image is None:
         logger.error("Failed to resize image")
         raise ValueError("Image resizing failed. Check the file format and content.")
