@@ -53,23 +53,23 @@ resized_images = fitsbolt.resize_images(
     show_progress=True
 )
 
-# Step 3: Normalise images  
-normalised_images = fitsbolt.normalise_images(
-    images=resized_images,
+# Step 3: Apply channel combination if needed
+if raw_images[0].shape[-1] > 3:  # If more channels than needed
+    combined_images = fitsbolt.batch_channel_combination(
+        resized_images,
+        channel_combination=np.eye(3),  # Identity matrix for direct mapping
+        output_dtype=None  # Keep as float for normalization
+    )
+else:
+    combined_images = resized_images
+
+# Step 4: Normalise images  
+final_images = fitsbolt.normalise_images(
+    images=combined_images,
     normalisation_method=fitsbolt.NormalisationMethod.LOG,
     output_dtype=np.uint8,  # Final output as uint8
     show_progress=True
 )
-
-# Step 4: Apply channel combination if needed
-if raw_images[0].shape[-1] > 3:  # If more channels than needed
-    final_images = fitsbolt.batch_channel_combination(
-        normalised_images,
-        channel_combination=np.eye(3),  # Identity matrix for direct mapping
-        output_dtype=normalised_images[0].dtype
-    )
-else:
-    final_images = normalised_images
 
 print(f"Processed {len(final_images)} images")
 for i, img in enumerate(final_images):
@@ -78,7 +78,7 @@ for i, img in enumerate(final_images):
 
 ### Using the Complete Pipeline
 
-For convenience, images can be read and processed by just one function call with the recommended processing order (read, resize, normalise, combine):
+For convenience, images can be read and processed by just one function call with the recommended processing order (read, resize, combine channels, normalise):
 
 ```python
 from fitsbolt import load_and_process_images, NormalisationMethod
@@ -190,7 +190,7 @@ resized = fitsbolt.resize_images(
 ### Complete Pipeline Function
 
 #### `fitsbolt.load_and_process_images()`
-Combines all steps in a single function call with the recommended processing order: read, resize, normalise, combine.
+Combines all steps in a single function call with the recommended processing order: read, resize, combine channels, normalise.
 
 ```python
 processed = fitsbolt.load_and_process_images(

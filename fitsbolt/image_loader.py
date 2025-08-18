@@ -17,6 +17,7 @@
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
+from copy import deepcopy
 
 from .normalisation.NormalisationMethod import NormalisationMethod
 from .normalisation.normalisation import _normalise_image
@@ -33,26 +34,38 @@ def _process_image(
     image_source="array",
 ):
     """
-    Process an image array by normalising and resizing it.
+    Process an image array by resizing, combining channels, and normalising it.
     Args:
         image (numpy.ndarray): Image array to process H,W or H,W,C
         cfg: Configuration object containing size, normalisation_method
         image_source (str): Source of the image for logging
     Returns:
-        numpy.ndarray: Processed image array as uint8 (H,W or H,W,C)
+        numpy.ndarray: Processed image array in specified output dtype (H,W or H,W,C)
     """
     try:
-        logger.trace(f"Normalising image with setting {cfg.normalisation_method}")
+        logger.trace("Processing image with order: resize → combine channels → normalise")
         # Expect a H,W,C image
         im_is_2d = False
         if len(image.shape) == 2:
             image = np.expand_dims(image, axis=-1)
             im_is_2d = True
-        # first resize, then normalise, then combine channels
-        image = _resize_image(image, cfg, do_type_conversion=False)  # no type conversion here
-        image = _normalise_image(image, cfg=cfg)
-        original_dtype = image.dtype
-        # _read image has no channel combination anymore and channel_combination must be done manually now
+        # if type is conversion only, we do *not* want to give floats!
+        original_cfg_dtype = deepcopy(cfg.output_dtype)
+        if cfg.normalisation_method == NormalisationMethod.CONVERSION_ONLY:
+            # get dtype of image
+            cfg.output_dtype = image.dtype  # change cfg for _resize
+            do_type_conversion = True
+            combination_output_dtype = image.dtype
+        else:
+            do_type_conversion = False
+            combination_output_dtype = None
+
+        # Step 1: Resize (keep as float for processing chain)
+        image = _resize_image(
+            image, cfg, do_type_conversion=do_type_conversion
+        )  # type conversion here
+
+        # Step 2: Combine channels before normalisation
         channel_combination_exists = cfg.get("channel_combination") is not None
         if not channel_combination_exists:
             recompute_config_channel_combination(cfg)
@@ -62,10 +75,15 @@ def _process_image(
         image = batch_channel_combination(
             image,
             cfg.channel_combination,
-            original_dtype,
+            output_dtype=combination_output_dtype,  # Keep as float for normalization
         )
         # want to squeeze the image axis again
         image = np.squeeze(image, axis=0)
+        cfg.output_dtype = original_cfg_dtype  # restore proper config
+
+        # Step 3: Normalize after channel combination
+        image = _normalise_image(image, cfg=cfg)
+
         if im_is_2d:
             image = np.squeeze(image, axis=-1)
             # if image was 2D, we want to return it like this
