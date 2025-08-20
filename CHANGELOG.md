@@ -1,4 +1,10 @@
 # Changelog
+## [0.1.3] - 2025-08-18
+
+### Changed
+
+- Updated processing order in `_process_image` to resize → combine channels → normalise for improved quality and consistency with manual workflow recommendations
+
 ## [0.1.2] - 2025-08-14
 
 ### Added
@@ -45,5 +51,7 @@
 - intial publication
 
 ## Version overview
+[0.1.3]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Lasloruhberg/fitsbolt/releases/tag/v0.1.0

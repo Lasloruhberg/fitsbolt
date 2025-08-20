@@ -476,6 +476,8 @@ def _midtones_normalisation(data, cfg):
         # Find the appropriate midtones balance parameter m
         max_value = _compute_max_value(data[..., c], cfg)
         min_value = _compute_min_value(data[..., c], cfg)
+        # include necessary clipping
+        data[..., c] = np.clip(data[..., c], min_value, max_value)
         normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
 
         m = _find_mean_of_normalised(normalised_channel, cfg)
