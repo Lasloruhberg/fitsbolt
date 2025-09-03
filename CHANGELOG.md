@@ -4,6 +4,7 @@
 ### Changed
 
 - Updated processing order in `_process_image` to resize → combine channels → normalise for improved quality and consistency with manual workflow recommendations
+- Added support for Python 3.10
 
 ## [0.1.2] - 2025-08-14
 
