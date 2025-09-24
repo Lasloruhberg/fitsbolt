@@ -21,7 +21,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "astropy>=6.0",
-    "numpy>=2.0",
+    "numpy>=1.26",
     "scikit-image",
     "tqdm",
     "pillow",
