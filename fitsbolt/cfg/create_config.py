@@ -190,11 +190,6 @@ def create_config(
                         # Map all output channels to the single input channel
                         for i in range(0, combination_array.shape[0]):
                             combination_array[i, 0] = 1
-
-                # Debug output
-                print(f"Created channel_combination array with shape {combination_array.shape}")
-                print(f"Array contents: {combination_array}")
-
                 cfg.channel_combination = combination_array
         else:
 

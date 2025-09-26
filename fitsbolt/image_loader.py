@@ -43,7 +43,6 @@ def _process_image(
     """
     try:
         logger.trace("Processing image with order: resize → combine channels → normalise")
-        print(f"{cfg}")
         # Expect a H,W,C image
         im_is_2d = False
         if len(image.shape) == 2:
