@@ -1,4 +1,9 @@
 # Changelog
+## [0.1.3.1] - 2025-09-26
+
+### Changed
+- Hotfix to remove print statements in the code.
+
 ## [0.1.3] - 2025-08-18
 
 ### Changed
