@@ -1,4 +1,9 @@
 # Changelog
+## [0.1.4] - 2025-11-12
+
+### Changed
+- Switch license to MIT
+
 ## [0.1.3.1] - 2025-09-26
 
 ### Changed
