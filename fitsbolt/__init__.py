@@ -2,7 +2,7 @@
 # Copyright (C) <2025>  <Ruhberg>
 #
 #    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the MIT License
+#    it under the terms of the MIT or GPL-3.0 License
 
 # Core imports
 from .image_loader import load_and_process_images
@@ -15,7 +15,7 @@ from .normalisation.normalisation import normalise_images
 from .cfg.create_config import create_config, validate_config, SUPPORTED_IMAGE_EXTENSIONS
 from .channel_mixing import batch_channel_combination
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 __all__ = [
     # Main functionality

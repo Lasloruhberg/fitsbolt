@@ -1,4 +1,9 @@
 # Changelog
+## [0.1.5] - 2025-11-19
+
+### Changed
+- Switch license to dual MIT/GLP-3.0
+
 ## [0.1.4] - 2025-11-12
 
 ### Changed
