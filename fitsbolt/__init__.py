@@ -15,7 +15,7 @@ from .normalisation.normalisation import normalise_images
 from .cfg.create_config import create_config, validate_config, SUPPORTED_IMAGE_EXTENSIONS
 from .channel_mixing import batch_channel_combination
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 __all__ = [
     # Main functionality
