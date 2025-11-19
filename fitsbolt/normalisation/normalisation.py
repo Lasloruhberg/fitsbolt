@@ -2,7 +2,7 @@
 # Copyright (C) <2025>  <Ruhberg>
 #
 #    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the MIT & GPL-3.0 License
+#    it under the terms of the MIT or GPL-3.0 License
 
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
