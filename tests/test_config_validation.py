@@ -2,7 +2,7 @@
 # Copyright (C) <2025>  <Ruhberg>
 #
 #    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the MIT License
+#    it under the terms of the MIT & GPL-3.0 License
 
 """
 Tests for config validation and creation functions.
