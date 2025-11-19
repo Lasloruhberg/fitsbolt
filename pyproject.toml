@@ -7,7 +7,7 @@ name = "fitsbolt"
 version = "0.1.5"
 description = "Python module to load and process astronomical images"
 readme = "README.md"
-license = "MIT"
+license = "MIT OR GPL-3.0"
 license-files = ["LICEN[CS]E*", "LICENSES/*"]
 authors = [{ name = "Laslo E. Ruhberg" }]
 classifiers = [
