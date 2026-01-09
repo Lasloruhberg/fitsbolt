@@ -31,6 +31,7 @@ def _get_fits():
     global _fits
     if _fits is None:
         from astropy.io import fits
+
         _fits = fits
     return _fits
 

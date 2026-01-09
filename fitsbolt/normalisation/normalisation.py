@@ -31,6 +31,7 @@ def _get_astropy_viz():
             AsinhStretch,
             PercentileInterval,
         )
+
         _astropy_viz = {
             "ImageNormalize": ImageNormalize,
             "LogStretch": LogStretch,
@@ -47,6 +48,7 @@ def _get_skimage_util():
     global _skimage_util
     if _skimage_util is None:
         from skimage.util import img_as_ubyte, img_as_uint, img_as_float32
+
         _skimage_util = {
             "img_as_ubyte": img_as_ubyte,
             "img_as_uint": img_as_uint,
@@ -214,7 +216,9 @@ def _linear_normalisation(data, cfg):
     maximum = _compute_max_value(data, cfg=cfg)
     viz = _get_astropy_viz()
     if minimum < maximum:
-        norm = viz["ImageNormalize"](data, vmin=minimum, vmax=maximum, stretch=viz["LinearStretch"](), clip=True)
+        norm = viz["ImageNormalize"](
+            data, vmin=minimum, vmax=maximum, stretch=viz["LinearStretch"](), clip=True
+        )
     else:
         warnings.warn(
             "Image maximum is not larger than minimum, only doing conversion normalisation"
@@ -395,7 +399,10 @@ def _asinh_normalisation(data, cfg):
     viz = _get_astropy_viz()
     if channels == 1:
         norm = viz["ImageNormalize"](
-            data, interval=viz["PercentileInterval"](clip[0]), stretch=viz["AsinhStretch"](scale[0]), clip=True
+            data,
+            interval=viz["PercentileInterval"](clip[0]),
+            stretch=viz["AsinhStretch"](scale[0]),
+            clip=True,
         )
         normalised = norm(data)
     else:

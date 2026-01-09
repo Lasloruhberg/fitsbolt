@@ -29,6 +29,6 @@ print(f"{end - start:.6f}")
     assert result.returncode == 0, f"Import failed: {result.stderr}"
 
     import_time = float(result.stdout.strip())
-    assert import_time < max_import_time, (
-        f"Import took {import_time:.3f}s, expected < {max_import_time}s"
-    )
+    assert (
+        import_time < max_import_time
+    ), f"Import took {import_time:.3f}s, expected < {max_import_time}s"

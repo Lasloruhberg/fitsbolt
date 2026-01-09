@@ -21,6 +21,7 @@ def _get_skimage_resize():
     global _skimage_resize
     if _skimage_resize is None:
         from skimage.transform import resize
+
         _skimage_resize = resize
     return _skimage_resize
 
