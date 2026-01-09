@@ -9,20 +9,33 @@ import logging
 from typing import Optional
 
 
+# Cache for jupyter detection - None means not yet checked
+_jupyter_cache = None
+
+
 def _is_jupyter_notebook():
-    """Detect if code is running in a Jupyter notebook environment."""
-    try:
-        # Check for IPython kernel
-        from IPython import get_ipython
+    """Detect if code is running in a Jupyter notebook environment.
 
-        ipython = get_ipython()
-        if ipython is None:
-            return False
+    Uses lightweight detection without importing IPython.
+    """
+    global _jupyter_cache
+    if _jupyter_cache is not None:
+        return _jupyter_cache
 
-        # Check if it's a notebook kernel (not terminal IPython)
-        return hasattr(ipython, "kernel")
-    except ImportError:
-        return False
+    # Check if IPython kernel modules are already loaded (Jupyter auto-loads these)
+    if "IPython" in sys.modules and "ipykernel" in sys.modules:
+        try:
+            # Only import if already loaded
+            get_ipython = sys.modules["IPython"].get_ipython
+            ipython = get_ipython()
+            if ipython is not None and hasattr(ipython, "kernel"):
+                _jupyter_cache = True
+                return True
+        except (AttributeError, KeyError):
+            pass
+
+    _jupyter_cache = False
+    return False
 
 
 class FitsboltLogger:
