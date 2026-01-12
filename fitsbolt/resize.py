@@ -5,12 +5,25 @@
 #    it under the terms of the MIT or GPL-3.0 License
 
 import numpy as np
-from skimage.transform import resize
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
 from .cfg.create_config import create_config
 from .cfg.logger import logger
+
+
+# Lazy import for skimage.transform
+_skimage_resize = None
+
+
+def _get_skimage_resize():
+    """Lazy import of skimage.transform.resize."""
+    global _skimage_resize
+    if _skimage_resize is None:
+        from skimage.transform import resize
+
+        _skimage_resize = resize
+    return _skimage_resize
 
 
 def resize_images(
@@ -132,7 +145,8 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
         logger.warning("Received an empty image, returning as is.")
         raise ValueError("Image is empty, cannot resize.")
     if cfg.size is not None and image.shape[:2] != tuple(cfg.size):
-        image = resize(
+        resize_func = _get_skimage_resize()
+        image = resize_func(
             image,
             cfg.size,
             anti_aliasing=None,

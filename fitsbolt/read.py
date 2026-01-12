@@ -10,7 +10,6 @@ import warnings
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-from astropy.io import fits
 
 from .cfg.create_config import (
     create_config,
@@ -21,6 +20,20 @@ from .cfg.logger import logger
 from .channel_mixing import (
     batch_channel_combination,
 )
+
+
+# Lazy import for astropy.io.fits
+_fits = None
+
+
+def _get_fits():
+    """Lazy import of astropy.io.fits."""
+    global _fits
+    if _fits is None:
+        from astropy.io import fits
+
+        _fits = fits
+    return _fits
 
 
 def read_images(
@@ -222,7 +235,7 @@ def _read_multi_fits_image(filepaths, fits_extensions, cfg):
 
         logger.trace(f"Reading FITS file {filepath} with extension {extension}")
 
-        with fits.open(filepath) as hdul:
+        with _get_fits().open(filepath) as hdul:
             # Handle extension access
             if isinstance(extension, (int, np.integer)):
                 extension_idx = int(extension)
@@ -345,7 +358,7 @@ def _read_image(filepath, cfg):
 
     if file_ext == ".fits":
         # Handle FITS files with astropy
-        with fits.open(filepath) as hdul:
+        with _get_fits().open(filepath) as hdul:
             try:
                 # Handle different extension types (None, int, string, or list)
                 if fits_extension is None:

@@ -9,34 +9,67 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 import warnings
 
-from skimage.util import img_as_ubyte, img_as_uint, img_as_float32
-
-from astropy.visualization import (
-    ImageNormalize,
-    LogStretch,
-    LinearStretch,
-    ZScaleInterval,
-    AsinhStretch,
-    PercentileInterval,
-)
-
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 from fitsbolt.cfg.create_config import create_config
 from fitsbolt.cfg.logger import logger
 
 
+# Lazy imports for heavy dependencies
+_astropy_viz = None
+_skimage_util = None
+
+
+def _get_astropy_viz():
+    """Lazy import of astropy.visualization components."""
+    global _astropy_viz
+    if _astropy_viz is None:
+        from astropy.visualization import (
+            ImageNormalize,
+            LogStretch,
+            LinearStretch,
+            ZScaleInterval,
+            AsinhStretch,
+            PercentileInterval,
+        )
+
+        _astropy_viz = {
+            "ImageNormalize": ImageNormalize,
+            "LogStretch": LogStretch,
+            "LinearStretch": LinearStretch,
+            "ZScaleInterval": ZScaleInterval,
+            "AsinhStretch": AsinhStretch,
+            "PercentileInterval": PercentileInterval,
+        }
+    return _astropy_viz
+
+
+def _get_skimage_util():
+    """Lazy import of skimage.util components."""
+    global _skimage_util
+    if _skimage_util is None:
+        from skimage.util import img_as_ubyte, img_as_uint, img_as_float32
+
+        _skimage_util = {
+            "img_as_ubyte": img_as_ubyte,
+            "img_as_uint": img_as_uint,
+            "img_as_float32": img_as_float32,
+        }
+    return _skimage_util
+
+
 def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
     """Convert the image data to the specified output dtype."""
+    skimage_util = _get_skimage_util()
     if cfg.output_dtype == np.uint8:
-        return img_as_ubyte(data)
+        return skimage_util["img_as_ubyte"](data)
     elif cfg.output_dtype == np.uint16:
-        return img_as_uint(data)
+        return skimage_util["img_as_uint"](data)
     elif cfg.output_dtype == np.float32:
-        return img_as_float32(data)
+        return skimage_util["img_as_float32"](data)
     else:
         # Default to uint8 if output_dtype is not specified or not supported
         warnings.warn(f"Unsupported output dtype: {cfg.output_dtype}, defaulting to uint8")
-        return img_as_ubyte(data)
+        return skimage_util["img_as_ubyte"](data)
 
 
 def _crop_center(data: np.ndarray, crop_height: int, crop_width: int) -> np.ndarray:
@@ -140,21 +173,22 @@ def _log_normalisation(data, cfg):
         )
 
     maximum = _compute_max_value(data, cfg=cfg)
+    viz = _get_astropy_viz()
     if minimum < maximum:
-        norm = ImageNormalize(
+        norm = viz["ImageNormalize"](
             data,
             vmin=minimum,
             vmax=maximum,
-            stretch=LogStretch(a=cfg.normalisation.log_scale_a),
+            stretch=viz["LogStretch"](a=cfg.normalisation.log_scale_a),
             clip=True,
         )
     else:
         warnings.warn("Image maximum is not larger than minimum, using linear normalisation")
-        norm = ImageNormalize(
+        norm = viz["ImageNormalize"](
             data,
             vmin=None,
             vmax=None,
-            stretch=LogStretch(a=cfg.normalisation.log_scale_a),
+            stretch=viz["LogStretch"](a=cfg.normalisation.log_scale_a),
             clip=True,
         )
     img_normalised = norm(data)  # range 0,1
@@ -180,8 +214,11 @@ def _linear_normalisation(data, cfg):
 
     minimum = _compute_min_value(data, cfg=cfg)
     maximum = _compute_max_value(data, cfg=cfg)
+    viz = _get_astropy_viz()
     if minimum < maximum:
-        norm = ImageNormalize(data, vmin=minimum, vmax=maximum, stretch=LinearStretch(), clip=True)
+        norm = viz["ImageNormalize"](
+            data, vmin=minimum, vmax=maximum, stretch=viz["LinearStretch"](), clip=True
+        )
     else:
         warnings.warn(
             "Image maximum is not larger than minimum, only doing conversion normalisation"
@@ -206,10 +243,11 @@ def _zscale_normalisation(data, cfg):
         warnings.warn("Zscale normalisation: constant image detected, using fallback conversion.")
         return _conversiononly_normalisation(data, cfg)
 
+    viz = _get_astropy_viz()
     # Min Max value do not apply, also no constrain to center
-    norm = ImageNormalize(
+    norm = viz["ImageNormalize"](
         data,
-        interval=ZScaleInterval(
+        interval=viz["ZScaleInterval"](
             n_samples=cfg.normalisation.zscale.n_samples,
             contrast=cfg.normalisation.zscale.contrast,
             max_reject=cfg.normalisation.zscale.max_reject,
@@ -217,7 +255,7 @@ def _zscale_normalisation(data, cfg):
             krej=cfg.normalisation.zscale.krej,
             max_iterations=cfg.normalisation.zscale.max_iterations,
         ),
-        stretch=LinearStretch(),
+        stretch=viz["LinearStretch"](),
         clip=True,
     )
     img_normalised = norm(data)  # range 0,1
@@ -291,7 +329,8 @@ def _conversiononly_normalisation(data, cfg):
 
     # ensure valid range
     if maximum > minimum:
-        norm = ImageNormalize(data, vmin=minimum, vmax=maximum, clip=True)
+        viz = _get_astropy_viz()
+        norm = viz["ImageNormalize"](data, vmin=minimum, vmax=maximum, clip=True)
         img_normalised = norm(data)  # range 0,1
         return _type_conversion(img_normalised, cfg)
     else:
@@ -357,19 +396,23 @@ def _asinh_normalisation(data, cfg):
     data = np.clip(data, min_value, max_value)
 
     # Apply asinh normalisation & percentile clipping, potentially per-channel
+    viz = _get_astropy_viz()
     if channels == 1:
-        norm = ImageNormalize(
-            data, interval=PercentileInterval(clip[0]), stretch=AsinhStretch(scale[0]), clip=True
+        norm = viz["ImageNormalize"](
+            data,
+            interval=viz["PercentileInterval"](clip[0]),
+            stretch=viz["AsinhStretch"](scale[0]),
+            clip=True,
         )
         normalised = norm(data)
     else:
         normalised = np.zeros_like(data, dtype=np.float32)
         for c in range(channels):
             # Apply asinh stretch with scale parameter and percentile clipping for each channel
-            norm = ImageNormalize(
+            norm = viz["ImageNormalize"](
                 data[..., c],
-                interval=PercentileInterval(clip[c]),
-                stretch=AsinhStretch(scale[c]),
+                interval=viz["PercentileInterval"](clip[c]),
+                stretch=viz["AsinhStretch"](scale[c]),
                 clip=True,
             )
             normalised[..., c] = norm(data[..., c])
