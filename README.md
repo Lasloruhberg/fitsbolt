@@ -1,5 +1,5 @@
 fitsbolt - A Python package for image loading and processing
-Copyright (C) <2025>  <Ruhberg>
+Copyright (C) <2025>  Ruhberg
 
 # fitsbolt
 
