@@ -8,7 +8,8 @@ import os
 import numpy as np
 import warnings
 from PIL import Image
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import partial
 from tqdm import tqdm
 
 from .cfg.create_config import (
@@ -36,6 +37,24 @@ def _get_fits():
     return _fits
 
 
+def _worker_read_image(filepath, cfg):
+    """Module-level worker for ProcessPoolExecutor compatibility."""
+    try:
+        return _read_image(filepath, cfg)
+    except Exception as e:
+        logger.error(f"Error loading {filepath}: {str(e)}")
+        raise e
+
+
+def _worker_read_multi_fits_image(filepaths, fits_extension, cfg):
+    """Module-level worker for multi-FITS ProcessPoolExecutor compatibility."""
+    try:
+        return _read_multi_fits_image(filepaths, fits_extension, cfg)
+    except Exception as e:
+        logger.error(f"Error loading {filepaths}: {str(e)}")
+        raise e
+
+
 def read_images(
     filepaths,
     fits_extension=None,
@@ -47,6 +66,7 @@ def read_images(
     force_dtype=True,
     log_level="WARNING",
     read_only=False,
+    use_multiprocessing=False,
 ):
     """Load and process multiple images in parallel.
 
@@ -69,6 +89,8 @@ def read_images(
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
         read_only (bool, optional): If True, skips the channel combination logic.
+        use_multiprocessing (bool, optional): Use ProcessPoolExecutor instead of ThreadPoolExecutor.
+                                              Bypasses GIL for CPU-heavy workloads. Defaults to False.
 
     Returns:
         list: image or list of images for successfully read images
@@ -130,45 +152,26 @@ def read_images(
     logger.debug(
         f"Loading {len(filepaths)} images in parallel with normalisation: {cfg.normalisation_method}"
     )
+
+    Executor = ProcessPoolExecutor if use_multiprocessing else ThreadPoolExecutor
+
     if multi_fits_mode:
-
-        def read_single_image(filepaths):
-            try:
-                image = _read_multi_fits_image(
-                    filepaths,
-                    fits_extension,
-                    cfg,
-                )
-                return image
-            except Exception as e:
-                logger.error(f"Error loading {filepaths}: {str(e)}")
-                raise e
-
+        worker_fn = partial(_worker_read_multi_fits_image, fits_extension=fits_extension, cfg=cfg)
     else:
+        worker_fn = partial(_worker_read_image, cfg=cfg)
 
-        def read_single_image(filepath):
-            try:
-                image = _read_image(
-                    filepath,
-                    cfg,
-                )
-                return image
-            except Exception as e:
-                logger.error(f"Error loading {filepath}: {str(e)}")
-                raise e
-
-    # Use ThreadPoolExecutor for parallel loading
-    with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
+    # Use executor for parallel loading
+    with Executor(max_workers=cfg.num_workers) as executor:
         if show_progress:
             results = list(
                 tqdm(
-                    executor.map(read_single_image, filepaths),
+                    executor.map(worker_fn, filepaths),
                     desc=desc,
                     total=len(filepaths),
                 )
             )
         else:
-            results = list(executor.map(read_single_image, filepaths))
+            results = list(executor.map(worker_fn, filepaths))
 
     # Combine channels
     # Do a linear combination based on the configuration

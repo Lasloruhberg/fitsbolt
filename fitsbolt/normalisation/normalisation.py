@@ -5,7 +5,8 @@
 #    it under the terms of the MIT or GPL-3.0 License
 
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import partial
 from tqdm import tqdm
 import warnings
 
@@ -577,6 +578,18 @@ def _normalise_image(data, cfg):
         return _conversiononly_normalisation(data, cfg=cfg)
 
 
+def _worker_normalise_image(image, cfg):
+    """Module-level worker for ProcessPoolExecutor compatibility."""
+    try:
+        image = _normalise_image(image, cfg)
+        if image is None:
+            raise ValueError("Image normalisation failed. Check the image content.")
+        return image
+    except Exception as e:
+        logger.error(f"Error normalising image: {str(e)}")
+        raise e
+
+
 def normalise_images(
     images,
     output_dtype=np.uint8,
@@ -601,6 +614,7 @@ def normalise_images(
     desc="Normalising images",
     show_progress=True,
     log_level="WARNING",
+    use_multiprocessing=False,
 ):
     """Load and process multiple images in parallel.
 
@@ -702,32 +716,21 @@ def normalise_images(
         f"Normalising {len(images)} images in parallel with normalisation: {cfg.normalisation_method}"
     )
 
-    def normalise_single_image(image):
-        try:
-            image = _normalise_image(
-                image,
-                cfg,
-            )
-            if image is None:
-                logger.error("Failed to normalise image")
-                raise ValueError("Image normalisation failed. Check the image content.")
-            return image
-        except Exception as e:
-            logger.error(f"Error loading {image}: {str(e)}")
-            raise e
+    worker_fn = partial(_worker_normalise_image, cfg=cfg)
+    Executor = ProcessPoolExecutor if use_multiprocessing else ThreadPoolExecutor
 
-    # Use ThreadPoolExecutor for parallel loading
-    with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
+    # Use executor for parallel loading
+    with Executor(max_workers=cfg.num_workers) as executor:
         if show_progress:
             results = list(
                 tqdm(
-                    executor.map(normalise_single_image, images),
+                    executor.map(worker_fn, images),
                     desc=desc,
                     total=len(images),
                 )
             )
         else:
-            results = list(executor.map(normalise_single_image, images))
+            results = list(executor.map(worker_fn, images))
 
     logger.debug(f"Successfully loaded {len(results)} of {len(images)} images")
     if return_single:
