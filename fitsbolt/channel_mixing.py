@@ -63,6 +63,7 @@ def batch_channel_combination(
     Returns:
         Combined image array of n_images, H, W, n_output_channels
     """
+    images = np.asarray(images)
     cc = np.asarray(channel_combination, dtype=np.float64)
     n_out, n_in = cc.shape
 
