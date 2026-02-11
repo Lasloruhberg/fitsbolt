@@ -512,6 +512,12 @@ def _midtones_normalisation(data, cfg):
         min_value = _compute_min_value(data[..., c], cfg)
         # include necessary clipping
         data[..., c] = np.clip(data[..., c], min_value, max_value)
+
+        # Skip MTF for constant channels (avoids division by zero)
+        if min_value >= max_value:
+            data[..., c] = 0.0
+            continue
+
         normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
 
         m = _find_mean_of_normalised(normalised_channel, cfg)
