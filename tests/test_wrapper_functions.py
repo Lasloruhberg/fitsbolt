@@ -725,8 +725,8 @@ class TestWrapperFunctions:
                             # For float types, values should be finite
                             assert np.all(np.isfinite(result)), "Float output should be finite"
                             # Normalised values should typically be in [0, 1] range for most methods
-                            if norm_method != NormalisationMethod.CONVERSION_ONLY:
-                                # For CONVERSION_ONLY, the values might not be normalised to [0, 1], so we skip this check
+                            if input_dtype != output_dtype:
+                                # Then it should keep the original range
                                 assert np.min(result) >= 0, "Normalised float should have min >= 0"
                                 assert np.max(result) <= 1, "Normalised float should have max <= 1"
 
