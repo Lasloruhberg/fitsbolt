@@ -45,8 +45,14 @@ def _get_tifffile():
     """Lazy import of tifffile."""
     global _tifffile
     if _tifffile is None:
-        import tifffile
-
+        try:
+            import tifffile
+        except ImportError as exc:
+            raise ImportError(
+                "The 'tifffile' package is required by fitsbolt but could not be imported. "
+                "Please ensure it is installed and available in your environment, for example via "
+                "'pip install tifffile'."
+            ) from exc
         _tifffile = tifffile
     return _tifffile
 
