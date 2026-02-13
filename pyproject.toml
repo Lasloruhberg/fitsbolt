@@ -26,6 +26,7 @@ dependencies = [
     "tqdm",
     "pillow",
     "dotmap",
+    "tifffile",
 ]
 
 [project.optional-dependencies]
