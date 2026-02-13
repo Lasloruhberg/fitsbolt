@@ -98,7 +98,7 @@ def _crop_center(data: np.ndarray, crop_height: int, crop_width: int) -> np.ndar
     return data[top : top + crop_height, left : left + crop_width]
 
 
-def _compute_max_value(data, cfg=None):
+def _compute_max_value(data, cfg):
     """Compute the maximum value of the image for normalisation
     Args:
         data (numpy array): Input image array, can be high dynamic range
