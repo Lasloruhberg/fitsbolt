@@ -168,6 +168,27 @@ class TestImageIO:
         cls.extreme_fits_path = os.path.join(cls.test_dir, "extreme_values.fits")
         fits.writeto(cls.extreme_fits_path, extreme_data, overwrite=True)
 
+        # Create TIFF test files with different dtypes for bug testing
+        # TIFF uint8 (baseline)
+        tiff_uint8_data = np.zeros((100, 100), dtype=np.uint8)
+        tiff_uint8_data[25:75, 25:75] = 128  # Gray square
+        cls.tiff_uint8_path = os.path.join(cls.test_dir, "test_uint8.tif")
+        Image.fromarray(tiff_uint8_data, mode="L").save(cls.tiff_uint8_path)
+
+        # TIFF float32 (test case for bug)
+        tiff_float32_data = np.zeros((100, 100), dtype=np.float32)
+        tiff_float32_data[25:75, 25:75] = 0.5  # Medium gray square in [0.0-1.0]
+        cls.tiff_float32_path = os.path.join(cls.test_dir, "test_float32.tif")
+        Image.fromarray(tiff_float32_data, mode="F").save(cls.tiff_float32_path)
+
+        # TIFF float64 (additional test case)
+        tiff_float64_data = np.zeros((100, 100), dtype=np.float64)
+        tiff_float64_data[25:75, 25:75] = 0.7  # Brighter square in [0.0-1.0]
+        # Note: PIL doesn't have a mode for float64, so we save as float32 and verify loading
+        cls.tiff_float64_path = os.path.join(cls.test_dir, "test_float64.tif")
+        # Use PIL mode 'F' for float32, we'll test if it can be read as float64
+        Image.fromarray(tiff_float64_data.astype(np.float32), mode="F").save(cls.tiff_float64_path)
+
         # Keep track of all created image files
         cls.image_files = [
             cls.rgb_path,
@@ -179,6 +200,9 @@ class TestImageIO:
             cls.fits_path,
             cls.multi_fits_path,
             cls.extreme_fits_path,
+            cls.tiff_uint8_path,
+            cls.tiff_float32_path,
+            cls.tiff_float64_path,
         ]
 
     @classmethod
@@ -1089,3 +1113,299 @@ class TestImageIO:
                         os.remove(empty_file)
                     except (OSError, PermissionError):
                         pass
+
+
+class TestTIFFDtypeLoading:
+    """Test class for TIFF dtype loading with various formats.
+
+    Tests loading of TIFF files with different dtypes (uint8, float32, float64)
+    in both grayscale and RGB formats.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        """Set up test files for TIFF dtype testing."""
+        cls.test_dir = tempfile.mkdtemp()
+
+        # Create test images in different formats and dtypes
+
+        # 1. TIFF uint8
+        tiff_uint8_data = np.zeros((100, 100), dtype=np.uint8)
+        tiff_uint8_data[25:75, 25:75] = 128  # Gray square
+        cls.tiff_uint8_path = os.path.join(cls.test_dir, "test_uint8.tif")
+        Image.fromarray(tiff_uint8_data, mode="L").save(cls.tiff_uint8_path)
+
+        # 2. TIFF float32
+        tiff_float32_data = np.zeros((100, 100), dtype=np.float32)
+        tiff_float32_data[25:75, 25:75] = 0.5  # Medium gray in [0.0-1.0]
+        cls.tiff_float32_path = os.path.join(cls.test_dir, "test_float32.tif")
+        Image.fromarray(tiff_float32_data, mode="F").save(cls.tiff_float32_path)
+
+        # 4. JPG uint8 for comparison
+        jpg_data = np.zeros((100, 100), dtype=np.uint8)
+        jpg_data[25:75, 25:75] = 128
+        cls.jpg_path = os.path.join(cls.test_dir, "test.jpg")
+        Image.fromarray(jpg_data, mode="L").save(cls.jpg_path)
+
+        # 5. PNG uint8 for comparison
+        png_data = np.zeros((100, 100), dtype=np.uint8)
+        png_data[25:75, 25:75] = 128
+        cls.png_path = os.path.join(cls.test_dir, "test.png")
+        Image.fromarray(png_data, mode="L").save(cls.png_path)
+
+        # 6. RGB TIFF float32
+        tiff_rgb_float32_data = np.zeros((100, 100, 3), dtype=np.float32)
+        tiff_rgb_float32_data[25:75, 25:75, 0] = 0.8  # Red channel
+        tiff_rgb_float32_data[25:75, 25:75, 1] = 0.5  # Green channel
+        tiff_rgb_float32_data[25:75, 25:75, 2] = 0.3  # Blue channel
+        cls.tiff_rgb_float32_path = os.path.join(cls.test_dir, "test_rgb_float32.tif")
+        # Use tifffile to save RGB float32 properly
+
+        import tifffile
+
+        tifffile.imwrite(cls.tiff_rgb_float32_path, tiff_rgb_float32_data)
+
+    @classmethod
+    def teardown_class(cls):
+        """Clean up test files."""
+        try:
+            shutil.rmtree(cls.test_dir)
+        except (PermissionError, OSError) as e:
+            print(f"Warning: Could not delete test directory: {e}")
+
+    def test_read_tiff_uint8_direct(self):
+        """Test reading uint8 TIFF directly with _read_image."""
+        from fitsbolt.read import _read_image
+
+        cfg = create_config(n_output_channels=1)
+
+        img = _read_image(self.tiff_uint8_path, cfg)
+
+        print("\nTIFF uint8 direct read:")
+        print(f"  Shape: {img.shape}")
+        print(f"  Dtype: {img.dtype}")
+        print(f"  Min: {img.min()}, Max: {img.max()}")
+
+        assert img.dtype == np.uint8, f"Expected uint8, got {img.dtype}"
+        assert img.shape == (100, 100, 1), f"Expected shape (100, 100, 1), got {img.shape}"
+
+        # Verify values: center should be 128, borders should be 0
+        center_value = img[50, 50, 0]
+        border_value = img[10, 10, 0]
+        assert center_value == 128, f"Expected center value 128, got {center_value}"
+        assert border_value == 0, f"Expected border value 0, got {border_value}"
+
+    def test_read_tiff_float32_direct(self):
+        """Test reading float32 TIFF directly with _read_image."""
+        from fitsbolt.read import _read_image
+
+        cfg = create_config(n_output_channels=1)
+
+        img = _read_image(self.tiff_float32_path, cfg)
+
+        assert img.dtype == np.float32, f"Expected float32, got {img.dtype}"
+        assert img.shape == (100, 100, 1), f"Expected shape (100, 100, 1), got {img.shape}"
+        assert (
+            img.min() >= 0.0 and img.max() <= 1.0
+        ), f"Values out of range: [{img.min()}, {img.max()}]"
+
+        # Verify values: center should be 0.5, borders should be 0.0
+        center_value = img[50, 50, 0]
+        border_value = img[10, 10, 0]
+        assert np.isclose(
+            center_value, 0.5, atol=1e-5
+        ), f"Expected center value 0.5, got {center_value}"
+        assert np.isclose(
+            border_value, 0.0, atol=1e-5
+        ), f"Expected border value 0.0, got {border_value}"
+
+    def test_read_tiff_rgb_float32_direct(self):
+        """Test reading RGB float32 TIFF directly with _read_image."""
+        from fitsbolt.read import _read_image
+
+        cfg = create_config(n_output_channels=3)
+
+        img = _read_image(self.tiff_rgb_float32_path, cfg)
+
+        assert img.dtype == np.float32, f"Expected float32, got {img.dtype}"
+        assert img.shape == (100, 100, 3), f"Expected shape (100, 100, 3), got {img.shape}"
+
+        # Verify RGB values in center: R=0.8, G=0.5, B=0.3
+        center_r = img[50, 50, 0]
+        center_g = img[50, 50, 1]
+        center_b = img[50, 50, 2]
+        assert np.isclose(center_r, 0.8, atol=1e-5), f"Expected R=0.8, got {center_r}"
+        assert np.isclose(center_g, 0.5, atol=1e-5), f"Expected G=0.5, got {center_g}"
+        assert np.isclose(center_b, 0.3, atol=1e-5), f"Expected B=0.3, got {center_b}"
+
+        # Verify borders are 0
+        border_values = img[10, 10, :]
+        assert np.allclose(
+            border_values, 0.0, atol=1e-5
+        ), f"Expected border values [0,0,0], got {border_values}"
+
+    def test_load_tiff_uint8_as_uint8_e2e(self):
+        """Test loading uint8 TIFF as uint8 through full pipeline."""
+        result = load_and_process_images(
+            self.tiff_uint8_path,
+            output_dtype=np.uint8,
+            size=[100, 100],
+            normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+            n_output_channels=1,
+            show_progress=False,
+        )
+
+        assert result.dtype == np.uint8, f"Expected uint8, got {result.dtype}"
+        assert result.shape == (100, 100, 1), f"Expected shape (100, 100, 1), got {result.shape}"
+
+        # Verify values are preserved: center should be 128, borders should be 0
+        center_value = result[50, 50, 0]
+        border_value = result[10, 10, 0]
+        assert center_value == 128, f"Expected center value 128, got {center_value}"
+        assert border_value == 0, f"Expected border value 0, got {border_value}"
+
+    def test_load_tiff_uint8_as_float32_e2e(self):
+        """Test loading uint8 TIFF as float32 through full pipeline."""
+        result = load_and_process_images(
+            self.tiff_uint8_path,
+            output_dtype=np.float32,
+            size=[100, 100],
+            normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+            n_output_channels=1,
+            show_progress=False,
+        )
+
+        assert result.dtype == np.float32, f"Expected float32, got {result.dtype}"
+        assert result.shape == (100, 100, 1), f"Expected shape (100, 100, 1), got {result.shape}"
+
+        # Verify values: uint8 128 converts to float32 128/255 ≈ 0.502
+        center_value = result[50, 50, 0]
+        border_value = result[10, 10, 0]
+        expected_center = 128.0 / 255.0
+        assert np.isclose(
+            center_value, expected_center, atol=1e-3
+        ), f"Expected center ~{expected_center}, got {center_value}"
+        assert np.isclose(
+            border_value, 0.0, atol=1e-5
+        ), f"Expected border value 0.0, got {border_value}"
+
+    def test_load_tiff_float32_as_float32_e2e(self):
+        """Test loading float32 TIFF as float32 through full pipeline."""
+        result = load_and_process_images(
+            self.tiff_float32_path,
+            output_dtype=np.float32,
+            size=[100, 100],
+            normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+            n_output_channels=1,
+            show_progress=False,
+        )
+
+        assert result.dtype == np.float32, f"Expected float32, got {result.dtype}"
+        assert result.shape == (100, 100, 1), f"Expected shape (100, 100, 1), got {result.shape}"
+        assert (
+            result.min() >= 0.0 and result.max() <= 1.0
+        ), f"Values out of range: [{result.min()}, {result.max()}]"
+
+        # Verify values are preserved: center should be 0.5, borders should be 0.0
+        center_value = result[50, 50, 0]
+        border_value = result[10, 10, 0]
+        assert np.isclose(
+            center_value, 0.5, atol=1e-3
+        ), f"Expected center value 0.5, got {center_value}"
+        assert np.isclose(
+            border_value, 0.0, atol=1e-5
+        ), f"Expected border value 0.0, got {border_value}"
+
+    def test_load_tiff_float32_as_uint8_e2e(self):
+        """Test loading float32 TIFF as uint8 through full pipeline."""
+        result = load_and_process_images(
+            self.tiff_float32_path,
+            output_dtype=np.uint8,
+            size=[100, 100],
+            normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+            n_output_channels=1,
+            show_progress=False,
+        )
+
+        assert result.dtype == np.uint8, f"Expected uint8, got {result.dtype}"
+        assert result.shape == (100, 100, 1), f"Expected shape (100, 100, 1), got {result.shape}"
+
+        # Verify values: float32 0.5 converts to uint8 0.5*255 ≈ 127-128
+        center_value = result[50, 50, 0]
+        border_value = result[10, 10, 0]
+        expected_center = int(255)  # fits rescaled to 0,1 linearly and then converted
+        assert (
+            abs(center_value - expected_center) <= 1
+        ), f"Expected center ~{expected_center}, got {center_value}"
+        assert border_value == 0, f"Expected border value 0, got {border_value}"
+
+    def test_load_jpg_as_float32_e2e(self):
+        """Test loading JPG as float32 through full pipeline."""
+        result = load_and_process_images(
+            self.jpg_path,
+            output_dtype=np.float32,
+            size=[100, 100],
+            normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+            n_output_channels=1,
+            show_progress=False,
+        )
+
+        assert result.dtype == np.float32, f"Expected float32, got {result.dtype}"
+        assert result.shape == (100, 100, 1), f"Expected shape (100, 100, 1), got {result.shape}"
+
+        # Verify values: uint8 128 converts to float32 128/255 ≈ 0.502
+        # Note: JPG compression may cause slight variations
+        center_value = result[50, 50, 0]
+        border_value = result[10, 10, 0]
+        expected_center = 128.0 / 255.0
+        assert np.isclose(
+            center_value, expected_center, atol=0.05
+        ), f"Expected center ~{expected_center}, got {center_value}"
+        assert np.isclose(
+            border_value, 0.0, atol=0.02
+        ), f"Expected border value ~0.0, got {border_value}"
+
+    def test_load_png_as_float32_e2e(self):
+        """Test loading PNG as float32 through full pipeline."""
+        result = load_and_process_images(
+            self.png_path,
+            output_dtype=np.float32,
+            size=[100, 100],
+            normalisation_method=NormalisationMethod.CONVERSION_ONLY,
+            n_output_channels=1,
+            show_progress=False,
+        )
+
+        assert result.dtype == np.float32, f"Expected float32, got {result.dtype}"
+        assert result.shape == (100, 100, 1), f"Expected shape (100, 100, 1), got {result.shape}"
+
+        # Verify values: uint8 128 converts to float32 128/255 ≈ 0.502
+        center_value = result[50, 50, 0]
+        border_value = result[10, 10, 0]
+        expected_center = 128.0 / 255.0
+        assert np.isclose(
+            center_value, expected_center, atol=1e-3
+        ), f"Expected center ~{expected_center}, got {center_value}"
+        assert np.isclose(
+            border_value, 0.0, atol=1e-5
+        ), f"Expected border value 0.0, got {border_value}"
+
+    def test_tiff_loading_with_tifffile(self):
+        """Verify that TIFF files are loaded correctly with tifffile."""
+        try:
+            import tifffile
+        except ImportError:
+            pytest.skip("tifffile not available")
+
+        # Verify uint8 TIFF
+        img_uint8 = tifffile.imread(self.tiff_uint8_path)
+        assert img_uint8.dtype == np.uint8
+
+        # Verify float32 TIFF
+        img_float32 = tifffile.imread(self.tiff_float32_path)
+        assert img_float32.dtype == np.float32
+
+        # Verify RGB float32 TIFF
+        img_rgb = tifffile.imread(self.tiff_rgb_float32_path)
+        assert img_rgb.dtype == np.float32
+        assert img_rgb.shape == (100, 100, 3)

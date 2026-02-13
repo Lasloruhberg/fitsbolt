@@ -37,6 +37,26 @@ def _get_fits():
     return _fits
 
 
+# Lazy import for tifffile
+_tifffile = None
+
+
+def _get_tifffile():
+    """Lazy import of tifffile."""
+    global _tifffile
+    if _tifffile is None:
+        try:
+            import tifffile
+        except ImportError as exc:
+            raise ImportError(
+                "The 'tifffile' package is required by fitsbolt but could not be imported. "
+                "Please ensure it is installed and available in your environment, for example via "
+                "'pip install tifffile'."
+            ) from exc
+        _tifffile = tifffile
+    return _tifffile
+
+
 def _worker_read_image(filepath, cfg):
     """Module-level worker for ProcessPoolExecutor compatibility."""
     try:
@@ -536,8 +556,20 @@ def _read_image(filepath, cfg):
                 image.ndim >= 2 and image.ndim <= 3
             ), f"FITS image {filepath} has less than 2 or more than 3 dimensions: {image.shape}"
     else:
-        # Use PIL for standard image formats
-        image = np.array(Image.open(filepath))
+        # Handle TIFF files specially to preserve float dtypes
+        if file_ext in [".tiff", ".tif"]:
+            # Use tifffile for TIFF files to properly preserve float dtypes
+            try:
+                image = _get_tifffile().imread(filepath)
+            except Exception as exc:
+                logger.error(f"Failed to read TIFF image {filepath}: {exc}")
+                raise RuntimeError(
+                    f"Failed to read TIFF image {filepath}. "
+                    "The file may be corrupted or in an unsupported TIFF format."
+                ) from exc
+        else:
+            # Use PIL for standard image formats (JPG, PNG, etc.)
+            image = np.array(Image.open(filepath))
 
         # Validate the image has appropriate dimensions
         assert (
