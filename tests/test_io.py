@@ -1190,7 +1190,7 @@ class TestTIFFDtypeLoading:
 
         img = _read_image(self.tiff_uint8_path, cfg)
 
-        print(f"\nTIFF uint8 direct read:")
+        print("\nTIFF uint8 direct read:")
         print(f"  Shape: {img.shape}")
         print(f"  Dtype: {img.dtype}")
         print(f"  Min: {img.min()}, Max: {img.max()}")
