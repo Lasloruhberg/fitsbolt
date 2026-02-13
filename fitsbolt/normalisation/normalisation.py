@@ -296,7 +296,8 @@ def _conversiononly_normalisation(data, cfg):
     if data.dtype == cfg.output_dtype:
         if np.issubdtype(cfg.output_dtype, np.floating):
             # For float output, ensure data is in [0,1] range later on
-            pass
+            # This is conversion only, so do not change the data
+            return data
 
         else:
             # For integer dtypes, if they match, return as is

@@ -1,4 +1,14 @@
 # Changelog
+## [0.2.0] - 2026-01-12
+
+### Added
+- Ability to choose between ThreadPools and ProcessPools
+- Performance Improvements for normal png, jpg images and simple channel combinations
+
+### Fixed
+- Midtones now supports constant image channels
+- Float32 Tiffles being cast to unit8 during read is now fixed.
+
 ## [0.1.6] - 2026-01-12
 
 ### Added
