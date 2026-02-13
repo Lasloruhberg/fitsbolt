@@ -5,7 +5,8 @@
 #    it under the terms of the MIT or GPL-3.0 License
 
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import partial
 from tqdm import tqdm
 import warnings
 
@@ -97,7 +98,7 @@ def _crop_center(data: np.ndarray, crop_height: int, crop_width: int) -> np.ndar
     return data[top : top + crop_height, left : left + crop_width]
 
 
-def _compute_max_value(data, cfg=None):
+def _compute_max_value(data, cfg):
     """Compute the maximum value of the image for normalisation
     Args:
         data (numpy array): Input image array, can be high dynamic range
@@ -295,7 +296,8 @@ def _conversiononly_normalisation(data, cfg):
     if data.dtype == cfg.output_dtype:
         if np.issubdtype(cfg.output_dtype, np.floating):
             # For float output, ensure data is in [0,1] range later on
-            pass
+            # This is conversion only, so do not change the data
+            return data
 
         else:
             # For integer dtypes, if they match, return as is
@@ -511,6 +513,12 @@ def _midtones_normalisation(data, cfg):
         min_value = _compute_min_value(data[..., c], cfg)
         # include necessary clipping
         data[..., c] = np.clip(data[..., c], min_value, max_value)
+
+        # Skip MTF for constant channels (avoids division by zero)
+        if min_value >= max_value:
+            data[..., c] = 0.0
+            continue
+
         normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
 
         m = _find_mean_of_normalised(normalised_channel, cfg)
@@ -577,6 +585,18 @@ def _normalise_image(data, cfg):
         return _conversiononly_normalisation(data, cfg=cfg)
 
 
+def _worker_normalise_image(image, cfg):
+    """Module-level worker for ProcessPoolExecutor compatibility."""
+    try:
+        image = _normalise_image(image, cfg)
+        if image is None:
+            raise ValueError("Image normalisation failed. Check the image content.")
+        return image
+    except Exception as e:
+        logger.error(f"Error normalising image: {str(e)}")
+        raise e
+
+
 def normalise_images(
     images,
     output_dtype=np.uint8,
@@ -601,6 +621,7 @@ def normalise_images(
     desc="Normalising images",
     show_progress=True,
     log_level="WARNING",
+    use_multiprocessing=False,
 ):
     """Load and process multiple images in parallel.
 
@@ -702,32 +723,21 @@ def normalise_images(
         f"Normalising {len(images)} images in parallel with normalisation: {cfg.normalisation_method}"
     )
 
-    def normalise_single_image(image):
-        try:
-            image = _normalise_image(
-                image,
-                cfg,
-            )
-            if image is None:
-                logger.error("Failed to normalise image")
-                raise ValueError("Image normalisation failed. Check the image content.")
-            return image
-        except Exception as e:
-            logger.error(f"Error loading {image}: {str(e)}")
-            raise e
+    worker_fn = partial(_worker_normalise_image, cfg=cfg)
+    Executor = ProcessPoolExecutor if use_multiprocessing else ThreadPoolExecutor
 
-    # Use ThreadPoolExecutor for parallel loading
-    with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
+    # Use executor for parallel loading
+    with Executor(max_workers=cfg.num_workers) as executor:
         if show_progress:
             results = list(
                 tqdm(
-                    executor.map(normalise_single_image, images),
+                    executor.map(worker_fn, images),
                     desc=desc,
                     total=len(images),
                 )
             )
         else:
-            results = list(executor.map(normalise_single_image, images))
+            results = list(executor.map(worker_fn, images))
 
     logger.debug(f"Successfully loaded {len(results)} of {len(images)} images")
     if return_single:

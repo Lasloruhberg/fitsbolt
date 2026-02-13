@@ -5,7 +5,8 @@
 #    it under the terms of the MIT or GPL-3.0 License
 
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import partial
 from tqdm import tqdm
 
 from .normalisation.NormalisationMethod import NormalisationMethod
@@ -94,6 +95,19 @@ def _load_image(filepath, cfg):
         raise e
 
 
+def _worker_load_image(filepath, cfg):
+    """Module-level worker for ProcessPoolExecutor compatibility."""
+    try:
+        image = _load_image(filepath, cfg)
+        if image is None:
+            raise ValueError(
+                f"Image loading failed for {filepath}. Check the file format and content."
+            )
+        return image
+    except Exception as e:
+        raise e
+
+
 def load_and_process_images(
     filepaths,
     output_dtype=np.uint8,
@@ -124,6 +138,7 @@ def load_and_process_images(
     show_progress=True,
     log_level="WARNING",
     cfg=None,
+    use_multiprocessing=False,
 ):
     """Load and process multiple images in parallel.
         this will first read the image, then resize it, then normalise it and finally combine channels.
@@ -179,6 +194,8 @@ def load_and_process_images(
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
         cfg (DotMap, optional): Configuration settings. Defaults to None.
+        use_multiprocessing (bool, optional): Use ProcessPoolExecutor instead of ThreadPoolExecutor.
+                                              Bypasses GIL for CPU-heavy workloads. Defaults to False.
 
 
     Returns:
@@ -248,34 +265,21 @@ def load_and_process_images(
         f"Loading {len(filepaths)} images in parallel with normalisation: {cfg.normalisation_method}"
     )
 
-    def load_single_image(filepath):
-        try:
-            image = _load_image(
-                filepath,
-                cfg,
-            )
-            if image is None:
-                logger.error(f"Failed to load image from {filepath}")
-                raise ValueError(
-                    f"Image loading failed for {filepath}. Check the file format and content."
-                )
-            return image
-        except Exception as e:
-            logger.error(f"Error loading {filepath}: {str(e)}")
-            raise e
+    worker_fn = partial(_worker_load_image, cfg=cfg)
+    Executor = ProcessPoolExecutor if use_multiprocessing else ThreadPoolExecutor
 
-    # Use ThreadPoolExecutor for parallel loading
-    with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
+    # Use executor for parallel loading
+    with Executor(max_workers=cfg.num_workers) as executor:
         if show_progress:
             results = list(
                 tqdm(
-                    executor.map(load_single_image, filepaths),
+                    executor.map(worker_fn, filepaths),
                     desc=desc,
                     total=len(filepaths),
                 )
             )
         else:
-            results = list(executor.map(load_single_image, filepaths))
+            results = list(executor.map(worker_fn, filepaths))
 
     logger.debug(f"Successfully loaded {len(results)} of {len(filepaths)} images")
     if return_single:

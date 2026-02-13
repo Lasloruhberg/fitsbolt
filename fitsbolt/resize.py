@@ -5,7 +5,8 @@
 #    it under the terms of the MIT or GPL-3.0 License
 
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import partial
 from tqdm import tqdm
 
 from .cfg.create_config import create_config
@@ -26,6 +27,15 @@ def _get_skimage_resize():
     return _skimage_resize
 
 
+def _worker_resize_image(image, cfg):
+    """Module-level worker for ProcessPoolExecutor compatibility."""
+    try:
+        return _resize_image(image, cfg)
+    except Exception as e:
+        logger.error(f"Error resizing image: {str(e)}")
+        raise e
+
+
 def resize_images(
     images,
     output_dtype=np.uint8,
@@ -35,6 +45,7 @@ def resize_images(
     desc="Resizing images",
     show_progress=True,
     log_level="WARNING",
+    use_multiprocessing=False,
 ):
     """
     Resize an image to the specified size using skimage's resize function.
@@ -47,6 +58,8 @@ def resize_images(
         interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
+        use_multiprocessing (bool, optional): Use ProcessPoolExecutor instead of ThreadPoolExecutor.
+                                              Bypasses GIL for CPU-heavy workloads. Defaults to False.
     Returns:
         list(numpy.ndarray): List of resized image arrays
 
@@ -67,29 +80,21 @@ def resize_images(
         f"Loading {len(images)} images in parallel with normalisation: {cfg.normalisation_method}"
     )
 
-    def resize_single_image(image):
-        try:
-            image = _resize_image(
-                image,
-                cfg,
-            )
-            return image
-        except Exception as e:
-            logger.error(f"Error resizing {image}: {str(e)}")
-            raise e
+    worker_fn = partial(_worker_resize_image, cfg=cfg)
+    Executor = ProcessPoolExecutor if use_multiprocessing else ThreadPoolExecutor
 
-    # Use ThreadPoolExecutor for parallel loading
-    with ThreadPoolExecutor(max_workers=cfg.num_workers) as executor:
+    # Use executor for parallel loading
+    with Executor(max_workers=cfg.num_workers) as executor:
         if show_progress:
             results = list(
                 tqdm(
-                    executor.map(resize_single_image, images),
+                    executor.map(worker_fn, images),
                     desc=desc,
                     total=len(images),
                 )
             )
         else:
-            results = list(executor.map(resize_single_image, images))
+            results = list(executor.map(worker_fn, images))
 
     logger.debug(f"Successfully loaded {len(results)} of {len(images)} images")
     return results
