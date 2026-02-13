@@ -553,8 +553,14 @@ def _read_image(filepath, cfg):
         # Handle TIFF files specially to preserve float dtypes
         if file_ext in [".tiff", ".tif"]:
             # Use tifffile for TIFF files to properly preserve float dtypes
-            image = _get_tifffile().imread(filepath)
-            logger.trace(f"Loaded TIFF with tifffile: dtype={image.dtype}, shape={image.shape}")
+            try:
+                image = _get_tifffile().imread(filepath)
+            except Exception as exc:
+                logger.error(f"Failed to read TIFF image {filepath}: {exc}")
+                raise RuntimeError(
+                    f"Failed to read TIFF image {filepath}. "
+                    "The file may be corrupted or in an unsupported TIFF format."
+                ) from exc
         else:
             # Use PIL for standard image formats (JPG, PNG, etc.)
             image = np.array(Image.open(filepath))
