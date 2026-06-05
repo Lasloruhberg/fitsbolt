@@ -53,7 +53,7 @@ def batch_channel_combination(
     Will typically return a float array, unless output_dtype is set.
 
     Includes fast paths for common cases (identity, channel slicing,
-    single-channel broadcast) to avoid expensive tensordot operations.
+    single-channel broadcast) that avoid the general matrix multiply.
 
     Args:
         images (np.ndarray): Array of (n_images, H, W, n_extensions)
@@ -83,9 +83,19 @@ def batch_channel_combination(
         combined = np.repeat(images, broadcast_n, axis=-1)
         return _convert_dtype(combined, output_dtype)
 
-    # --- General case: tensordot ---
-    # Contract the last axis of images (n_extensions) with the last axis of channel_combination (n_extensions)
-    # images: (n_images, H, W, n_extensions) @ channel_combination.T: (n_extensions, n_output_channels)
-    # Result: (n_images, H, W, n_output_channels)
-    combined = np.tensordot(images, cc.T, axes=([3], [0]))
+    # --- General case: 2D matmul (BLAS GEMM) ---
+    # Collapse the leading (n_images, H, W) axes into one and contract the
+    # input-channel axis with a single matrix multiply, which dispatches to a
+    # BLAS GEMM kernel. np.tensordot misses that kernel for this shape and is
+    # dramatically slower, and float64 GEMM is in turn far slower than float32,
+    # so compute in the input's float precision: a float32 batch stays float32
+    # (sgemm) instead of being upcast to float64. The output dtype is still
+    # governed by output_dtype via _convert_dtype, so callers requesting a
+    # specific dtype are unaffected; only the default (output_dtype=None) now
+    # returns float32 for a float32 input rather than float64.
+    compute_dtype = np.result_type(images.dtype, np.float32)
+    leading_shape = images.shape[:-1]
+    flat = np.ascontiguousarray(images.reshape(-1, n_in), dtype=compute_dtype)
+    weights = cc.T.astype(compute_dtype, copy=False)
+    combined = (flat @ weights).reshape(*leading_shape, n_out)
     return _convert_dtype(combined, output_dtype)

@@ -357,6 +357,34 @@ class TestBatchChannelCombination:
         expected_avg = (cutouts[:, :, :, 0] + cutouts[:, :, :, 1]) / 2
         np.testing.assert_allclose(result[:, :, :, 2], expected_avg)
 
+    def test_float32_input_stays_float32(self):
+        """General-path float32 input must combine in float32, not upcast to float64.
+
+        The matmul path computes in the input's float precision for speed; a
+        float32 batch should therefore yield a float32 result (the default
+        output_dtype=None case) rather than the float64 a tensordot would give.
+        """
+        cutouts = np.random.rand(4, 5, 6, 3).astype(np.float32)
+        weights = np.array([[1.0, 0.0, 0.75], [0.0, 1.0, 0.75]])  # general 2x3 matrix
+
+        result = batch_channel_combination(cutouts, weights)
+
+        assert result.dtype == np.float32
+        expected = np.tensordot(cutouts, weights.T, axes=([3], [0]))
+        np.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
+    def test_non_contiguous_input(self):
+        """A non-contiguous batch (e.g. a strided view) must combine correctly."""
+        full = np.random.rand(4, 5, 6, 3).astype(np.float32)
+        cutouts = full[:, ::2, :, :]  # strided, non-contiguous along axis 1
+        weights = np.array([[0.5, 0.3, 0.2], [0.1, 0.1, 0.8]])
+
+        result = batch_channel_combination(cutouts, weights)
+
+        expected = np.tensordot(cutouts, weights.T, axes=([3], [0]))
+        assert result.shape == (4, 3, 6, 2)
+        np.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
     def test_zero_weight_combinations(self):
         """Test various zero weight combinations."""
         cutouts = np.array([[[[10, 20, 30]]]])  # Shape: (1, 1, 1, 3)
