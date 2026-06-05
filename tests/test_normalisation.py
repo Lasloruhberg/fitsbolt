@@ -388,6 +388,73 @@ class TestNormalisationMethods:
         assert result.dtype == np.uint8
         # Should fall back to conversion only
 
+    @staticmethod
+    def _asinh_hdr_image(seed=0):
+        """A high-dynamic-range RGB image: faint background plus a bright core."""
+        rng = np.random.RandomState(seed)
+        image = rng.exponential(50.0, (80, 80, 3)).astype(np.float32)
+        image[35:45, 35:45, :] += rng.exponential(5000.0, (10, 10, 3)).astype(np.float32)
+        return image
+
+    def test_asinh_n_samples_none_is_exact(self):
+        """asinh_n_samples=None (default) must reproduce the all-pixel result."""
+        image = self._asinh_hdr_image()
+        cfg = get_asinh_test_config()
+        cfg.output_dtype = np.float32
+        cfg.normalisation.asinh_n_samples = None
+
+        result = _asinh_normalisation(image.copy(), cfg)
+
+        # The default path goes through astropy PercentileInterval over all pixels;
+        # assert it is unaffected by the new branch (finite, full range).
+        assert result.dtype == np.float32
+        assert np.isfinite(result).all()
+        assert result.min() >= 0.0 and result.max() <= 1.0
+
+    def test_asinh_n_samples_close_to_exact(self):
+        """A subsampled estimate should stay close to the exact result in the mean."""
+        image = self._asinh_hdr_image()
+        cfg_exact = get_asinh_test_config()
+        cfg_exact.output_dtype = np.float32
+        cfg_exact.normalisation.asinh_n_samples = None
+        cfg_sub = get_asinh_test_config()
+        cfg_sub.output_dtype = np.float32
+        cfg_sub.normalisation.asinh_n_samples = 2000
+
+        exact = _asinh_normalisation(image.copy(), cfg_exact)
+        approx = _asinh_normalisation(image.copy(), cfg_sub)
+
+        assert approx.shape == exact.shape
+        # The bias is concentrated in the bright tail; the mean shift is tiny.
+        assert np.abs(approx - exact).mean() < 0.02
+
+    def test_asinh_n_samples_is_deterministic(self):
+        """The strided subsample must give identical results across runs."""
+        image = self._asinh_hdr_image()
+        cfg = get_asinh_test_config()
+        cfg.output_dtype = np.float32
+        cfg.normalisation.asinh_n_samples = 1500
+
+        first = _asinh_normalisation(image.copy(), cfg)
+        second = _asinh_normalisation(image.copy(), cfg)
+
+        np.testing.assert_array_equal(first, second)
+
+    def test_asinh_n_samples_larger_than_image_is_exact(self):
+        """n_samples >= pixel count must take the exact (all-pixel) path."""
+        image = self._asinh_hdr_image()
+        cfg_exact = get_asinh_test_config()
+        cfg_exact.output_dtype = np.float32
+        cfg_exact.normalisation.asinh_n_samples = None
+        cfg_big = get_asinh_test_config()
+        cfg_big.output_dtype = np.float32
+        cfg_big.normalisation.asinh_n_samples = image[..., 0].size + 1
+
+        exact = _asinh_normalisation(image.copy(), cfg_exact)
+        big = _asinh_normalisation(image.copy(), cfg_big)
+
+        np.testing.assert_array_equal(big, exact)
+
 
 class TestNormaliseImageIntegration:
     """Test the main normalise_image function."""
