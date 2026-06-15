@@ -4,6 +4,8 @@
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the MIT or GPL-3.0 License
 
+import math
+
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from functools import partial
@@ -13,7 +15,6 @@ import warnings
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 from fitsbolt.cfg.create_config import create_config
 from fitsbolt.cfg.logger import logger
-
 
 # Lazy imports for heavy dependencies
 _astropy_viz = None
@@ -370,10 +371,12 @@ def _asinh_channel_norm(viz, channel_data, clip_percentile, scale, n_samples):
     percentile bounds (vmin/vmax) are estimated from a deterministic strided
     subsample rather than from every pixel. The percentile computation dominates
     the asinh stretch cost, so this is a large speed-up for a small bias in the
-    bright tail. The stride is fixed (not random, unlike astropy's
+    bright tail. The stride is deterministic (not random, unlike astropy's
     ``PercentileInterval(n_samples=...)``) so repeated runs stay reproducible,
-    which matters when the output feeds a downstream model. Only vmin/vmax are
-    affected; the ``AsinhStretch`` and clipping are identical to the exact path.
+    which matters when the output feeds a downstream model. The stride is made
+    coprime with the row length so the subsample walks every column rather than
+    aliasing onto a few. Only vmin/vmax are affected; the ``AsinhStretch`` and
+    clipping are identical to the exact path.
 
     Args:
         viz (dict): The lazily-imported astropy.visualization components.
@@ -387,7 +390,19 @@ def _asinh_channel_norm(viz, channel_data, clip_percentile, scale, n_samples):
     """
     if n_samples is not None and channel_data.size > n_samples:
         flat = channel_data.reshape(-1)
-        sample = flat[:: flat.size // n_samples]
+        # A constant stride over the C-order-flattened image aliases against the
+        # row length: when ``gcd(step, row_length) > 1`` the samples land on only
+        # a few columns, so vmin/vmax get estimated from a vertical sliver of the
+        # frame and miss spatially localised bright sources. Nudging ``step`` to
+        # be coprime with the row length makes the stride walk every column while
+        # keeping the sample count at ~``n_samples`` (so the speed-up is intact).
+        row_length = channel_data.shape[-1]
+        step = max(1, flat.size // n_samples)
+        tries = 0
+        while row_length > 1 and math.gcd(step, row_length) != 1 and tries < row_length:
+            step += 1
+            tries += 1
+        sample = flat[::step]
         lower = (100.0 - clip_percentile) / 2.0
         vmin, vmax = np.percentile(sample, (lower, 100.0 - lower))
         return viz["ImageNormalize"](

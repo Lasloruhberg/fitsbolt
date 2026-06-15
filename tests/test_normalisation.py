@@ -24,6 +24,8 @@ from fitsbolt.normalisation.normalisation import (
     _zscale_normalisation,
     _conversiononly_normalisation,
     _asinh_normalisation,
+    _asinh_channel_norm,
+    _get_astropy_viz,
     _expand,
 )
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
@@ -454,6 +456,33 @@ class TestNormalisationMethods:
         big = _asinh_normalisation(image.copy(), cfg_big)
 
         np.testing.assert_array_equal(big, exact)
+
+    def test_asinh_n_samples_recovers_localised_source(self):
+        """A bright source confined to columns a naive aliased stride would skip
+        must still be captured. For a 150x150 channel and n_samples=500 the naive
+        stride is 45; gcd(45, 150)=15, so it would sample only columns
+        {0, 15, 30, ...} and miss a source in columns 7-11 entirely. The coprime
+        stride walks every column, so vmax must reflect the bright source."""
+        viz = _get_astropy_viz()
+        channel = np.full((150, 150), 10.0, dtype=np.float32)
+        channel[60:90, 7:12] = 50000.0
+
+        norm = _asinh_channel_norm(viz, channel, 99.0, 1.0, n_samples=500)
+
+        assert norm.vmax > 1000.0
+
+    def test_asinh_n_samples_non_square(self):
+        """A non-square channel keys the stride off the row length (shape[-1]);
+        the subsample path must still produce a finite, in-range result."""
+        viz = _get_astropy_viz()
+        rng = np.random.default_rng(0)
+        channel = rng.exponential(50.0, (120, 200)).astype(np.float32)
+
+        norm = _asinh_channel_norm(viz, channel, 99.0, 1.0, n_samples=2000)
+        out = norm(channel)
+
+        assert np.isfinite(out).all()
+        assert out.min() >= 0.0 and out.max() <= 1.0
 
 
 class TestNormaliseImageIntegration:
