@@ -4,6 +4,8 @@
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the MIT or GPL-3.0 License
 
+import math
+
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from functools import partial
@@ -13,7 +15,6 @@ import warnings
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
 from fitsbolt.cfg.create_config import create_config
 from fitsbolt.cfg.logger import logger
-
 
 # Lazy imports for heavy dependencies
 _astropy_viz = None
@@ -363,6 +364,62 @@ def _expand(value, length: int) -> np.ndarray:
     return arr
 
 
+def _asinh_channel_norm(viz, channel_data, clip_percentile, scale, n_samples):
+    """Build the astropy asinh ImageNormalize for a single channel.
+
+    When ``n_samples`` is set and smaller than the channel's pixel count, the
+    percentile bounds (vmin/vmax) are estimated from a deterministic strided
+    subsample rather than from every pixel. The percentile computation dominates
+    the asinh stretch cost, so this is a large speed-up for a small bias in the
+    bright tail. The stride is deterministic (not random, unlike astropy's
+    ``PercentileInterval(n_samples=...)``) so repeated runs stay reproducible,
+    which matters when the output feeds a downstream model. The stride is made
+    coprime with the row length so the subsample walks every column rather than
+    aliasing onto a few. Only vmin/vmax are affected; the ``AsinhStretch`` and
+    clipping are identical to the exact path.
+
+    Args:
+        viz (dict): The lazily-imported astropy.visualization components.
+        channel_data (np.ndarray): A single channel of image data.
+        clip_percentile (float): Percentile width passed to PercentileInterval.
+        scale (float): Asinh stretch scale for this channel.
+        n_samples (int or None): Subsample size, or None to use all pixels.
+
+    Returns:
+        astropy.visualization.ImageNormalize: Normaliser for the channel.
+    """
+    if n_samples is not None and channel_data.size > n_samples:
+        flat = channel_data.reshape(-1)
+        # A constant stride over the C-order-flattened image aliases against the
+        # row length: when ``gcd(step, row_length) > 1`` the samples land on only
+        # a few columns, so vmin/vmax get estimated from a vertical sliver of the
+        # frame and miss spatially localised bright sources. Nudging ``step`` to
+        # be coprime with the row length makes the stride walk every column while
+        # keeping the sample count at ~``n_samples`` (so the speed-up is intact).
+        row_length = channel_data.shape[-1]
+        step = max(1, flat.size // n_samples)
+        tries = 0
+        while row_length > 1 and math.gcd(step, row_length) != 1 and tries < row_length:
+            step += 1
+            tries += 1
+        sample = flat[::step]
+        lower = (100.0 - clip_percentile) / 2.0
+        vmin, vmax = np.percentile(sample, (lower, 100.0 - lower))
+        return viz["ImageNormalize"](
+            channel_data,
+            vmin=vmin,
+            vmax=vmax,
+            stretch=viz["AsinhStretch"](scale),
+            clip=True,
+        )
+    return viz["ImageNormalize"](
+        channel_data,
+        interval=viz["PercentileInterval"](clip_percentile),
+        stretch=viz["AsinhStretch"](scale),
+        clip=True,
+    )
+
+
 def _asinh_normalisation(data, cfg):
     """A normalisation based on the asinh stretch.
     Allows for per-channel scaling and clipping.
@@ -398,25 +455,15 @@ def _asinh_normalisation(data, cfg):
     data = np.clip(data, min_value, max_value)
 
     # Apply asinh normalisation & percentile clipping, potentially per-channel
+    n_samples = cfg.normalisation.asinh_n_samples
     viz = _get_astropy_viz()
     if channels == 1:
-        norm = viz["ImageNormalize"](
-            data,
-            interval=viz["PercentileInterval"](clip[0]),
-            stretch=viz["AsinhStretch"](scale[0]),
-            clip=True,
-        )
+        norm = _asinh_channel_norm(viz, data, clip[0], scale[0], n_samples)
         normalised = norm(data)
     else:
         normalised = np.zeros_like(data, dtype=np.float32)
         for c in range(channels):
-            # Apply asinh stretch with scale parameter and percentile clipping for each channel
-            norm = viz["ImageNormalize"](
-                data[..., c],
-                interval=viz["PercentileInterval"](clip[c]),
-                stretch=viz["AsinhStretch"](scale[c]),
-                clip=True,
-            )
+            norm = _asinh_channel_norm(viz, data[..., c], clip[c], scale[c], n_samples)
             normalised[..., c] = norm(data[..., c])
     # correct to 0-1 range and convert to uint8
     min_value = np.min(normalised)
@@ -609,6 +656,7 @@ def normalise_images(
     norm_log_scale_a=1000.0,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
+    norm_asinh_n_samples=None,
     norm_zscale_n_samples=1000,
     norm_zscale_contrast=0.25,
     norm_zscale_max_reject=0.5,
@@ -644,6 +692,10 @@ def normalise_images(
                                                 should have the length of n_output_channels or 1. Defaults to [0.7].
             norm_asinh_clip (list, optional): Clip values for asinh normalisation,
                                                 should have the length of n_output_channels or 1. Defaults to [99.8].
+            norm_asinh_n_samples (int, optional): If set, the asinh percentile bounds are estimated from a
+                                                deterministic strided subsample of this many pixels per channel
+                                                rather than all pixels, trading a small bright-tail bias for speed.
+                                                Defaults to None (exact).
         Default ZScale settings (from astropy ZScaleInterval):
             norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
             norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
@@ -702,6 +754,7 @@ def normalise_images(
         norm_crop_for_maximum_value=norm_crop_for_maximum_value,
         norm_asinh_scale=norm_asinh_scale,
         norm_asinh_clip=norm_asinh_clip,
+        norm_asinh_n_samples=norm_asinh_n_samples,
         norm_zscale_n_samples=norm_zscale_n_samples,
         norm_zscale_contrast=norm_zscale_contrast,
         norm_zscale_max_reject=norm_zscale_max_reject,
