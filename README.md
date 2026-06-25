@@ -245,7 +245,7 @@ This parameter controls the number of channels in the output image (default is 3
 #### `channel_combination` Parameter
 
 When loading multiple FITS extensions, this parameter controls how they are combined:
-If unit8 output is requested, values are clipped to that range after combination.
+If unit8 output is requested, values are clipped to that range after combination and truncated with astype for the integer conversion.
 
 - **None**: Default mapping is applied:
   - If `len(fits_extension) == n_output_channels`: One-to-one mapping (identity matrix)
