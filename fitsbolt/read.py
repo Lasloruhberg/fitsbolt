@@ -22,7 +22,6 @@ from .channel_mixing import (
     batch_channel_combination,
 )
 
-
 # Lazy import for astropy.io.fits
 _fits = None
 
@@ -132,6 +131,7 @@ def read_images(
                     n_output_channels = len(fits_extension)
                 else:
                     n_output_channels = 1
+        channel_combination = None  # Skip channel combination logic if read_only is True
 
     # check if input is a single filepath or a list
     if not isinstance(filepaths, (list, np.ndarray)):
