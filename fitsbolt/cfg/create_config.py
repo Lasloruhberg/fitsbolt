@@ -195,6 +195,21 @@ def create_config(
             cfg.channel_combination = (
                 channel_combination  # n_output x fits_extension sizes np array
             )
+    else:
+        # no fits extensions, perhaps reading other file format
+        if channel_combination is None:
+
+            raise ValueError(
+                "Channel combination is not provided and no fits extensions are specified."
+                + "Provide a matix of shape n_output_channels x n_input_channels "
+                + f"Specified output channels: {n_output_channels}"
+                + f"-> set channel_combination to be a {n_output_channels}x n_input_channels"
+            )
+        else:
+
+            cfg.channel_combination = (
+                channel_combination  # n_output x n_input_channels size np array
+            )
     validate_config(cfg)
     return cfg
 
@@ -526,9 +541,11 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     raise ValueError(
                         f"{param_name} values for channel '{i}' must not sum to zero, got {value[i, :]}"
                     )
-            if not value.shape[0] == cfg.n_output_channels and not value.shape[1] == len(
-                cfg.fits_extension
-            ):
+            if not value.shape[0] == cfg.n_output_channels:
+                raise ValueError(
+                    f"{param_name} must have {cfg.n_output_channels} rows, got {value.shape[0]}"
+                )
+            if not value.shape[1] == len(cfg.fits_extension) and cfg.fits_extension is not None:
                 raise ValueError(
                     f"{param_name} channel mapping shape must reflect input and output shapes:"
                     + f" expected n output {cfg.n_output_channels} & n input {len(cfg.fits_extension)}"
