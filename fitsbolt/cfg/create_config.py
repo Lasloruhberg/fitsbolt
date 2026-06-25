@@ -31,6 +31,7 @@ def create_config(
     norm_crop_for_maximum_value=None,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
+    norm_asinh_n_samples=None,
     norm_zscale_n_samples=1000,
     norm_zscale_contrast=0.25,
     norm_zscale_max_reject=0.5,
@@ -72,6 +73,11 @@ def create_config(
                                                 should have the length of n_output_channels or 1. Defaults to [0.7].
             norm_asinh_clip (list, optional): Clip values for asinh normalisation,
                                                 should have the length of n_output_channels or 1. Defaults to [99.8].
+            norm_asinh_n_samples (int, optional): If set, the asinh percentile bounds (vmin/vmax) are estimated
+                                                from a deterministic strided subsample of this many pixels per
+                                                channel instead of all pixels. Trades a small bias in the bright
+                                                tail for a large reduction in cost (the percentile dominates the
+                                                asinh stretch). Defaults to None (use all pixels, exact).
         Default ZScale settings (from astropy ZScaleInterval):
             norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
             norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
@@ -123,6 +129,9 @@ def create_config(
     cfg.normalisation.asinh_scale = norm_asinh_scale
     # asinh_clip list of 3 floats in ]0.,100.], defining the clip for each channel:
     cfg.normalisation.asinh_clip = norm_asinh_clip
+    # int or None, number of pixels to subsample when estimating the asinh percentile bounds
+    # (None = use all pixels, exact):
+    cfg.normalisation.asinh_n_samples = norm_asinh_n_samples
 
     # ZSCALE settings
     cfg.normalisation.zscale = DotMap()
@@ -230,6 +239,7 @@ def _return_required_and_optional_keys():
         "normalisation": ["special_DotMap", None, None, False, None],
         "normalisation.asinh_scale": ["special_asinh_scale", None, None, False, None],
         "normalisation.asinh_clip": ["special_asinh_clip", None, None, False, None],
+        "normalisation.asinh_n_samples": [int, 1, None, True, None],
         "interpolation_order": [int, 0, 5, False, None],  # 0-5 for skimage interpolation"
         "output_dtype": [type, None, None, False, None],
         # Optional numeric parameters

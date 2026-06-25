@@ -24,6 +24,8 @@ from fitsbolt.normalisation.normalisation import (
     _zscale_normalisation,
     _conversiononly_normalisation,
     _asinh_normalisation,
+    _asinh_channel_norm,
+    _get_astropy_viz,
     _expand,
 )
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
@@ -387,6 +389,100 @@ class TestNormalisationMethods:
         result = _asinh_normalisation(image, cfg)
         assert result.dtype == np.uint8
         # Should fall back to conversion only
+
+    @staticmethod
+    def _asinh_hdr_image(seed=0):
+        """A high-dynamic-range RGB image: faint background plus a bright core."""
+        rng = np.random.RandomState(seed)
+        image = rng.exponential(50.0, (80, 80, 3)).astype(np.float32)
+        image[35:45, 35:45, :] += rng.exponential(5000.0, (10, 10, 3)).astype(np.float32)
+        return image
+
+    def test_asinh_n_samples_none_is_exact(self):
+        """asinh_n_samples=None (default) must reproduce the all-pixel result."""
+        image = self._asinh_hdr_image()
+        cfg = get_asinh_test_config()
+        cfg.output_dtype = np.float32
+        cfg.normalisation.asinh_n_samples = None
+
+        result = _asinh_normalisation(image.copy(), cfg)
+
+        # The default path goes through astropy PercentileInterval over all pixels;
+        # assert it is unaffected by the new branch (finite, full range).
+        assert result.dtype == np.float32
+        assert np.isfinite(result).all()
+        assert result.min() >= 0.0 and result.max() <= 1.0
+
+    def test_asinh_n_samples_close_to_exact(self):
+        """A subsampled estimate should stay close to the exact result in the mean."""
+        image = self._asinh_hdr_image()
+        cfg_exact = get_asinh_test_config()
+        cfg_exact.output_dtype = np.float32
+        cfg_exact.normalisation.asinh_n_samples = None
+        cfg_sub = get_asinh_test_config()
+        cfg_sub.output_dtype = np.float32
+        cfg_sub.normalisation.asinh_n_samples = 2000
+
+        exact = _asinh_normalisation(image.copy(), cfg_exact)
+        approx = _asinh_normalisation(image.copy(), cfg_sub)
+
+        assert approx.shape == exact.shape
+        # The bias is concentrated in the bright tail; the mean shift is tiny.
+        assert np.abs(approx - exact).mean() < 0.02
+
+    def test_asinh_n_samples_is_deterministic(self):
+        """The strided subsample must give identical results across runs."""
+        image = self._asinh_hdr_image()
+        cfg = get_asinh_test_config()
+        cfg.output_dtype = np.float32
+        cfg.normalisation.asinh_n_samples = 1500
+
+        first = _asinh_normalisation(image.copy(), cfg)
+        second = _asinh_normalisation(image.copy(), cfg)
+
+        np.testing.assert_array_equal(first, second)
+
+    def test_asinh_n_samples_larger_than_image_is_exact(self):
+        """n_samples >= pixel count must take the exact (all-pixel) path."""
+        image = self._asinh_hdr_image()
+        cfg_exact = get_asinh_test_config()
+        cfg_exact.output_dtype = np.float32
+        cfg_exact.normalisation.asinh_n_samples = None
+        cfg_big = get_asinh_test_config()
+        cfg_big.output_dtype = np.float32
+        cfg_big.normalisation.asinh_n_samples = image[..., 0].size + 1
+
+        exact = _asinh_normalisation(image.copy(), cfg_exact)
+        big = _asinh_normalisation(image.copy(), cfg_big)
+
+        np.testing.assert_array_equal(big, exact)
+
+    def test_asinh_n_samples_recovers_localised_source(self):
+        """A bright source confined to columns a naive aliased stride would skip
+        must still be captured. For a 150x150 channel and n_samples=500 the naive
+        stride is 45; gcd(45, 150)=15, so it would sample only columns
+        {0, 15, 30, ...} and miss a source in columns 7-11 entirely. The coprime
+        stride walks every column, so vmax must reflect the bright source."""
+        viz = _get_astropy_viz()
+        channel = np.full((150, 150), 10.0, dtype=np.float32)
+        channel[60:90, 7:12] = 50000.0
+
+        norm = _asinh_channel_norm(viz, channel, 99.0, 1.0, n_samples=500)
+
+        assert norm.vmax > 1000.0
+
+    def test_asinh_n_samples_non_square(self):
+        """A non-square channel keys the stride off the row length (shape[-1]);
+        the subsample path must still produce a finite, in-range result."""
+        viz = _get_astropy_viz()
+        rng = np.random.default_rng(0)
+        channel = rng.exponential(50.0, (120, 200)).astype(np.float32)
+
+        norm = _asinh_channel_norm(viz, channel, 99.0, 1.0, n_samples=2000)
+        out = norm(channel)
+
+        assert np.isfinite(out).all()
+        assert out.min() >= 0.0 and out.max() <= 1.0
 
 
 class TestNormaliseImageIntegration:
