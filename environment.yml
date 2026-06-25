@@ -8,7 +8,6 @@ dependencies:
   - astropy>=6.0
   - scikit-image
   - tqdm
-  - opencv-python-headless
   - pytest
   - pillow
   - dotmap
@@ -18,3 +17,4 @@ dependencies:
     - setuptools
     - wheel
     - build
+    - opencv-python-headless>=4.5
