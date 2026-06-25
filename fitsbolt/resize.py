@@ -164,8 +164,9 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
         if image.ndim == 3 and image.shape[2] == 1:
             readd_channel = True
 
+        # cv2 internally returns the input dtype
         image = resize_func(
-            image,
+            np.ascontiguousarray(image),
             cfg.size,
             interpolation=interpolation_flag,
         )
