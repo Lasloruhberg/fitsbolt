@@ -50,7 +50,8 @@ def create_config(
         output_dtype (type, optional): Data type for output images. Defaults to np.uint8.
         size (list, optional): Target size for image resizing. Defaults to [224, 224]. If None, no resizing.
         fits_extension (list, optional): Extension(s) to use when loading FITS files. Defaults to None.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
+                                             downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
         n_output_channels (int,optional): number of output channels. Defaults to 3.
         normalisation_method (NormalisationMethod, optional): Method for normalising images.
                             Defaults to NormalisationMethod.CONVERSION_ONLY.
@@ -110,7 +111,9 @@ def create_config(
     cfg.n_output_channels = n_output_channels  # int, normally 3 for R,G,B
     cfg.num_workers = num_workers
     cfg.force_dtype = force_dtype  # Force output to maintain original dtype after tensor operations
-    # order of interpolation for resizing with skimage, 0-5
+    # order of interpolation for resizing with opencv2,
+    # 0: cv2.INTER_NEAREST, 1: cv2.INTER_LINEAR, 2: cv2.INTER_CUBIC, 3: cv2.INTER_LANCZOS4,
+    # 4: cv2.INTER_AREA # always used for downscaling
     cfg.interpolation_order = interpolation_order
     # Normalisation settings
     cfg.normalisation_method = normalisation_method
@@ -249,7 +252,7 @@ def _return_required_and_optional_keys():
         "normalisation.asinh_scale": ["special_asinh_scale", None, None, False, None],
         "normalisation.asinh_clip": ["special_asinh_clip", None, None, False, None],
         "normalisation.asinh_n_samples": [int, 1, None, True, None],
-        "interpolation_order": [int, 0, 5, False, None],  # 0-5 for skimage interpolation"
+        "interpolation_order": [int, 0, 4, False, None],  # 0-4 for opencv2 interpolation
         "output_dtype": [type, None, None, False, None],
         # Optional numeric parameters
         "normalisation.maximum_value": [float, None, None, True, None],

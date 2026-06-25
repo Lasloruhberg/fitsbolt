@@ -153,7 +153,8 @@ def load_and_process_images(
                                                - A list of integers or strings to combine multiple extensions
                                                - For multi-FITS mode: list of extensions matching filepaths structure
                                                Uses the first extension (0) if None.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
+                                             downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
         normalisation_method (NormalisationMethod, optional): Normalisation method to use.
                                                 Defaults to NormalisationMethod.CONVERSION_ONLY.
         channel_combination (dict, optional): Dictionary defining how to combine FITS extensions into output channels.

@@ -24,6 +24,7 @@ dependencies = [
     "numpy>=1.26",
     "scikit-image",
     "tqdm",
+    "opencv-python",
     "pillow",
     "dotmap",
     "tifffile",

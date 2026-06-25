@@ -8,6 +8,7 @@ dependencies:
   - astropy>=6.0
   - scikit-image
   - tqdm
+  - opencv-python
   - pytest
   - pillow
   - dotmap

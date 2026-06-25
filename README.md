@@ -384,7 +384,8 @@ fitsbolt provides several normalisation methods for handling astronomical images
 #### General Parameters
 - **output_dtype**: Data type for output images (default: np.uint8)
 - **size**: Target size for resizing [height, width]
-- **interpolation_order**: Order of interpolation for resizing (0-5, default: 1)
+- **interpolation_order**: Order of interpolation for resizing (0-4, default: 1)
+    - 0: cv2.INTER_NEAREST, 1: cv2.INTER_LINEAR, 2: cv2.INTER_CUBIC, 3: cv2.INTER_LANCZOS4, 4: cv2.INTER_AREA # always used for downscaling
 - **num_workers**: Number of worker threads for parallel loading
 
 #### FITS File Parameters

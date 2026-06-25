@@ -11,20 +11,17 @@ from tqdm import tqdm
 
 from .cfg.create_config import create_config
 from .cfg.logger import logger
+import cv2
 
-
-# Lazy import for skimage.transform
-_skimage_resize = None
-
-
-def _get_skimage_resize():
-    """Lazy import of skimage.transform.resize."""
-    global _skimage_resize
-    if _skimage_resize is None:
-        from skimage.transform import resize
-
-        _skimage_resize = resize
-    return _skimage_resize
+# Maps the `interpolation` config value to the cv2 upscaling kernel flag.
+# Downscaling always uses cv2.INTER_AREA regardless of this setting.
+_CV2_UPSCALE_INTERPOLATION = {
+    0: cv2.INTER_NEAREST,
+    1: cv2.INTER_LINEAR,
+    2: cv2.INTER_CUBIC,
+    3: cv2.INTER_LANCZOS4,
+    4: cv2.INTER_AREA,  # always used for downscaling
+}
 
 
 def _worker_resize_image(image, cfg):
@@ -48,14 +45,15 @@ def resize_images(
     use_multiprocessing=False,
 ):
     """
-    Resize an image to the specified size using skimage's resize function.
+    Resize an image to the specified size using opencv2's resize function.
 
     Args:
         images (list(numpy.ndarray)): List of image arrays to resize
         output_dtype (type, optional): Desired output data type for the resized images.
                                        Can be np.unit8, np.uint16 or np.float32. Defaults to np.uint8.
         size (tuple, optional): Target size for resizing (height, width). If None, no resizing is done.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
+                                             downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
         use_multiprocessing (bool, optional): Use ProcessPoolExecutor instead of ThreadPoolExecutor.
@@ -104,14 +102,15 @@ def resize_image(
     image, output_dtype=np.uint8, size=None, interpolation_order=1, log_level="WARNING"
 ):
     """
-    Resize an image to the specified size using skimage's resize function.
+    Resize an image to the specified size using opencv2's resize function.
 
     Args:
         image (numpy.ndarray): Image array to resize
         output_dtype (type, optional): Desired output data type for the resized images.
                                        Can be np.unit8, np.uint16 or np.float32. Defaults to np.uint8.
         size (tuple, optional): Target size for resizing (height, width). If None, no resizing is done.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
+                                             downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
     Returns:
@@ -128,7 +127,7 @@ def resize_image(
 
 
 def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
-    """Resize an image to the specified size using skimage's resize function.
+    """Resize an image to the specified size using opencv2's resize function.
 
     Args:
         image (np.ndarray): Image array to resize
@@ -150,13 +149,20 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
         logger.warning("Received an empty image, returning as is.")
         raise ValueError("Image is empty, cannot resize.")
     if cfg.size is not None and image.shape[:2] != tuple(cfg.size):
-        resize_func = _get_skimage_resize()
+        resize_func = cv2.resize
+
+        upscale_interpolation = (
+            _CV2_UPSCALE_INTERPOLATION[cfg.interpolation_order]
+            if cfg.interpolation_order is not None
+            else cv2.INTER_LINEAR
+        )
+
+        downscaling = cfg.size[0] < image.shape[0] or cfg.size[1] < image.shape[1]
+        interpolation_flag = cv2.INTER_AREA if downscaling else upscale_interpolation
         image = resize_func(
             image,
             cfg.size,
-            anti_aliasing=None,
-            order=cfg.interpolation_order if cfg.interpolation_order is not None else 1,
-            preserve_range=True,
+            interpolation=interpolation_flag,
         )
         if do_type_conversion and (cfg.output_dtype is not None or output_dtype is not None):
             if output_dtype:
