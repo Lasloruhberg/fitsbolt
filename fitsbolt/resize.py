@@ -159,11 +159,18 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
 
         downscaling = cfg.size[0] < image.shape[0] or cfg.size[1] < image.shape[1]
         interpolation_flag = cv2.INTER_AREA if downscaling else upscale_interpolation
+        # cv2 drops channel dimension for single-channel images, so we need to add it back
+        readd_channel = False
+        if image.ndim == 3 and image.shape[2] == 1:
+            readd_channel = True
+
         image = resize_func(
             image,
             cfg.size,
             interpolation=interpolation_flag,
         )
+        if readd_channel:
+            image = np.expand_dims(image, axis=-1)
         if do_type_conversion and (cfg.output_dtype is not None or output_dtype is not None):
             if output_dtype:
                 target = output_dtype
