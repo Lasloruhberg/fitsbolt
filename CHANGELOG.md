@@ -1,4 +1,14 @@
 # Changelog
+## [0.2.1] - 2026-06-25
+
+### Added
+- Possibility to determine vmin/vmax via sampling for Asinh instead.
+- Channel combination can now be applied to non-fits images
+
+### Fixed
+- Improved Readme to include clipping and truncation of channel combination
+
+
 ## [0.2.0] - 2026-01-12
 
 ### Added
@@ -82,6 +92,8 @@
 - intial publication
 
 ## Version overview
+[0.2.1]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.1.6...v0.2.0
 [0.1.6]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.1.3.1...v0.1.4
