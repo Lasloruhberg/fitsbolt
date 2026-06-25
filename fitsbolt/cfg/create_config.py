@@ -198,13 +198,7 @@ def create_config(
     else:
         # no fits extensions, perhaps reading other file format
         if channel_combination is None:
-
-            raise ValueError(
-                "Channel combination is not provided and no fits extensions are specified."
-                + "Provide a matix of shape n_output_channels x n_input_channels "
-                + f"Specified output channels: {n_output_channels}"
-                + f"-> set channel_combination to be a {n_output_channels}x n_input_channels"
-            )
+            channel_combination = None  # No mapping = 1:1 mapping
         else:
 
             cfg.channel_combination = (
