@@ -40,8 +40,8 @@ def create_config(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
-    norm_midtones_percentile=99.8,
-    norm_midtones_desired_mean=0.2,
+    norm_midtones_percentile=[99.8],
+    norm_midtones_desired_mean=[0.2],
     norm_midtones_crop=None,
     log_level="WARNING",
     force_dtype=True,
@@ -87,7 +87,8 @@ def create_config(
             norm_asinh_clip (list, optional): Clip values for asinh normalisation,
                                                 should have the length of n_output_channels or 1. Defaults to [99.8].
             norm_asinh_n_samples (int, optional): If set, the asinh percentile bounds (vmin/vmax) are estimated
-                                                from a deterministic strided subsample. Is identical to norm_percentile_samples.
+                                                from a deterministic strided subsample.
+                                                Is identical to norm_percentile_samples.
                                                 Kept for backwards compatibility.
                                                 Defaults to None (use all pixels, exact).
         Default ZScale settings (from astropy ZScaleInterval):
@@ -100,9 +101,11 @@ def create_config(
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
 
         Default MTF settings:
-            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
-                                                        Defaults to 99.8.
-            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_percentile (list(float), optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
+                                                        Defaults to [99.8].
+            norm_midtones_desired_mean (list(float), optional): Desired mean for MTF, in [0, 1]. Defaults to [0.2].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
             norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
                                                     Defaults to None.
 
@@ -294,8 +297,20 @@ def _return_required_and_optional_keys():
         "normalisation.zscale.krej": [float, 0.0001, None, True, None],
         "normalisation.zscale.max_iterations": [int, 1, 100, True, None],
         "normalisation.midtones": ["special_DotMap", None, None, True, None],
-        "normalisation.midtones.percentile": [float, 0.0, 100.0, True, None],
-        "normalisation.midtones.desired_mean": [float, 0.0, 1.0, True, None],
+        "normalisation.midtones.percentile": [
+            "special_midtones_percentile",
+            None,
+            None,
+            True,
+            None,
+        ],
+        "normalisation.midtones.desired_mean": [
+            "special_midtones_desired_mean",
+            None,
+            None,
+            True,
+            None,
+        ],
         "normalisation.midtones.crop": ["special_crop", None, None, True, None],
     }
 
@@ -517,6 +532,20 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     )
                 if not (0 < value <= 100):
                     raise ValueError(f"{param_name} must be in range ]0,100.], got: {value}")
+        elif dtype == "special_midtones_percentile":
+            # check that it is a list of a number in ]0,100.]
+            if not isinstance(value, (list, tuple, int, float)):
+                raise ValueError(
+                    f"{param_name} must be a number or list/tuple of n_output_channels numbers in ]0,100.],"
+                    + f" got {type(value).__name__}"
+                )
+        elif dtype == "special_midtones_desired_mean":
+            # check that it is a list of a number in [0,1]
+            if not isinstance(value, (list, tuple, int, float)):
+                raise ValueError(
+                    f"{param_name} must be a number or list/tuple of n_output_channels numbers in [0,1],"
+                    + f" got {type(value).__name__}"
+                )
 
         elif dtype == "special_crop":
             if value is not None:

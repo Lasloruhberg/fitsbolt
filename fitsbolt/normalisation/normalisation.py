@@ -395,8 +395,8 @@ def _expand(value, length: int) -> np.ndarray:
     return arr
 
 
-def _asinh_channel_vmin_vmax(channel_data, clip_percentile, n_samples):
-    """Build the astropy asinh ImageNormalize for a single channel.
+def _percentile_clip_vmin_vmax(channel_data, clip_percentile, n_samples):
+    """Obtain percentile values from a sample of points based on a symmetric clip interval
 
     When ``n_samples`` is set and smaller than the channel's pixel count, the
     percentile bounds (vmin/vmax) are estimated from a deterministic strided
@@ -415,7 +415,7 @@ def _asinh_channel_vmin_vmax(channel_data, clip_percentile, n_samples):
         n_samples (int or None): Subsample size, or None to use all pixels.
 
     Returns:
-        astropy.visualization.ImageNormalize: Normaliser for the channel.
+        tuple: The lower and upper percentile values.
     """
     sample = _flatten_and_subsample(channel_data, n_samples)
     lower = (100.0 - clip_percentile) / 2.0
@@ -495,7 +495,7 @@ def _asinh_normalisation(data, cfg):
     # Apply asinh normalisation & percentile clipping, potentially per-channel
     n_samples = cfg.normalisation.asinh_n_samples
     if channels == 1:
-        vmin, vmax = _asinh_channel_vmin_vmax(data, clip[0], n_samples)
+        vmin, vmax = _percentile_clip_vmin_vmax(data, clip[0], n_samples)
         normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
     else:
         if colour_safe:
@@ -504,7 +504,7 @@ def _asinh_normalisation(data, cfg):
             vmaxs = np.empty(channels)
 
             for c in range(channels):
-                vmins[c], vmaxs[c] = _asinh_channel_vmin_vmax(data[..., c], clip[c], n_samples)
+                vmins[c], vmaxs[c] = _percentile_clip_vmin_vmax(data[..., c], clip[c], n_samples)
 
             vmin = vmins.min()
             vmax = vmaxs.max()
@@ -515,7 +515,7 @@ def _asinh_normalisation(data, cfg):
             normalised = np.zeros_like(data, dtype=np.float32)
 
             for c in range(channels):
-                vmin, vmax = _asinh_channel_vmin_vmax(data[..., c], clip[c], n_samples)
+                vmin, vmax = _percentile_clip_vmin_vmax(data[..., c], clip[c], n_samples)
                 normalised[..., c] = _apply_asinh_norm(
                     data[..., c], vmin, vmax, scale[c], cfg, recompute=True
                 )
@@ -602,33 +602,84 @@ def _midtones_normalisation(data, cfg):
         # create dummy channel index
         data_is_2d = True
         data = np.expand_dims(data, axis=-1)
-    # create a for loop over the channel to calculate m and apply MTF on a channel basis
-    for c in range(data.shape[-1]):
-        # do a channel-wise percentile clip
-        if cfg.normalisation.midtones.percentile:
-            data[..., c] = np.clip(
-                data[..., c],
-                data[..., c].min(),
-                np.percentile(data[..., c], cfg.normalisation.midtones.percentile),
-            )
-        # Find the appropriate midtones balance parameter m
-        max_value = _compute_max_value(data[..., c], cfg)
-        min_value = _compute_min_value(data[..., c], cfg)
+
+    if isinstance(cfg.normalisation.midtones.percentile, (list, tuple)) and isinstance(
+        cfg.normalisation.midtones.desired_mean, (list, tuple)
+    ):
+        colour_safe = (
+            len(cfg.normalisation.asinh_scale) == 1 and len(cfg.normalisation.asinh_clip) == 1
+        )
+    else:
+        colour_safe = False
+
+    if colour_safe:
+        # create a for loop over the channel to calculate m and apply MTF on a channel basis
+        max_values = np.empty(data.shape[-1])
+        min_values = np.empty(data.shape[-1])
+
+        for c in range(data.shape[-1]):
+            # do a channel-wise percentile clip
+
+            if cfg.normalisation.midtones.percentile:
+                min_value, max_value = _percentile_clip_vmin_vmax(
+                    data[..., c],
+                    cfg.normalisation.midtones.percentile,
+                    cfg.normalisation.minmax_samples,
+                )
+
+            else:
+                # Find the appropriate midtones balance parameter m
+                max_value = _compute_max_value(data[..., c], cfg)
+                min_value = _compute_min_value(data[..., c], cfg)
+            max_values[c] = max_value
+            min_values[c] = min_value
         # include necessary clipping
-        data[..., c] = np.clip(data[..., c], min_value, max_value)
+        min_value = np.min(min_values)
+        max_value = np.max(max_values)
+        data = np.clip(data[..., c], min_value, max_value)
 
         # Skip MTF for constant channels (avoids division by zero)
         if min_value >= max_value:
-            data[..., c] = 0.0
-            continue
+            data[...] = 0.0
 
-        normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
+        else:
+            normalised = (data - min_value) / (max_value - min_value)
 
-        m = _find_mean_of_normalised(normalised_channel, cfg)
-        # Apply the MTF to the image
-        transformed_channel = _apply_midtones_on_normalised_data(normalised_channel, m)
+            m = _find_mean_of_normalised(normalised, cfg)
+            # Apply the MTF to the image
+            for c in range(data.shape[-1]):
+                transformed_channel = _apply_midtones_on_normalised_data(normalised[..., c], m)
+                data[..., c] = transformed_channel
+    # if user wants the non-colousafe mode
+    else:
+        # create a for loop over the channel to calculate m and apply MTF on a channel basis
+        for c in range(data.shape[-1]):
+            # do a channel-wise percentile clip
+            if cfg.normalisation.midtones.percentile:
+                min_value, max_value = _percentile_clip_vmin_vmax(
+                    data[..., c],
+                    cfg.normalisation.midtones.percentile,
+                    cfg.normalisation.minmax_samples,
+                )
+            else:
+                # Find the appropriate midtones balance parameter m
+                max_value = _compute_max_value(data[..., c], cfg)
+                min_value = _compute_min_value(data[..., c], cfg)
+            # include necessary clipping
+            data[..., c] = np.clip(data[..., c], min_value, max_value)
 
-        data[..., c] = transformed_channel
+            # Skip MTF for constant channels (avoids division by zero)
+            if min_value >= max_value:
+                data[..., c] = 0.0
+                continue
+
+            normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
+
+            m = _find_mean_of_normalised(normalised_channel, cfg)
+            # Apply the MTF to the image
+            transformed_channel = _apply_midtones_on_normalised_data(normalised_channel, m)
+
+            data[..., c] = transformed_channel
     if data_is_2d:
         data = np.squeeze(data, axis=-1)
     # scale entire image to 0,1 and do type conversion
@@ -721,8 +772,8 @@ def normalise_images(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
-    norm_midtones_percentile=99.8,
-    norm_midtones_desired_mean=0.2,
+    norm_midtones_percentile=[99.8],
+    norm_midtones_desired_mean=[0.2],
     norm_midtones_crop=None,
     desc="Normalising images",
     show_progress=True,
@@ -773,9 +824,11 @@ def normalise_images(
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
 
         Default MTF settings:
-            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
-                                                        Defaults to 99.8.
-            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_percentile (list(float), optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
+                                                        Defaults to [99.8].
+            norm_midtones_desired_mean (list(float), optional): Desired mean for MTF, in [0, 1]. Defaults to [0.2].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
             norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
                                                     Defaults to None.
 

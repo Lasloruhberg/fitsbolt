@@ -133,8 +133,8 @@ def load_and_process_images(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
-    norm_midtones_percentile=99.8,
-    norm_midtones_desired_mean=0.2,
+    norm_midtones_percentile=[99.8],
+    norm_midtones_desired_mean=[0.2],
     norm_midtones_crop=None,
     desc="Loading images",
     show_progress=True,
@@ -194,9 +194,11 @@ def load_and_process_images(
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
 
         Default MTF settings:
-            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
-                                                        Defaults to 99.8.
-            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_percentile (list(float), optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
+                                                        Defaults to [99.8].
+            norm_midtones_desired_mean (list(float), optional): Desired mean for MTF, in [0, 1]. Defaults to [0.2].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
             norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
                                                   Defaults to None.
 
