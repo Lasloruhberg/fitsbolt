@@ -336,7 +336,8 @@ result = fitsbolt.load_and_process_images(
 
 ### Normalisation Methods
 
-fitsbolt provides several normalisation methods for handling astronomical images with high dynamic range:
+fitsbolt provides several normalisation methods for handling astronomical images with high dynamic range, which are per default coloursafe.
+Providing different clips and scales for channels overrides the colour preservation:
 
 1. **CONVERSION_ONLY**:
    - If input dtype already matches the requested output dtype: No conversion applied
@@ -423,6 +424,6 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **norm_zscale_max_iter**: Maximum number of iterations for zscale normalisation (default: 5)
 
 ##### Midtones Normalisation Parameters
-- **norm_midtones_percentile**: Percentile for clipping in each channel (default: 99.8)
-- **norm_midtones_desired_mean**: Target mean brightness value between 0 and 1 (default: 0.2)
+- **norm_midtones_percentile**: List of percentile for clipping applied (default: 99.8) If len>1 coulours will be affected
+- **norm_midtones_desired_mean**: List of target mean brightness value between 0 and 1 (default: 0.2)  If len>1 coulours will be affected
 - **norm_midtones_crop**: Optional crop dimensions (height, width) for calculating the mean
