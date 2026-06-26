@@ -52,6 +52,7 @@ def create_config(
         fits_extension (list, optional): Extension(s) to use when loading FITS files. Defaults to None.
         interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
                                              downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
+                                             0= nearest, 1= linear , 2=cubic, 3= lanczos4, 4= inter_area
         n_output_channels (int,optional): number of output channels. Defaults to 3.
         normalisation_method (NormalisationMethod, optional): Method for normalising images.
                             Defaults to NormalisationMethod.CONVERSION_ONLY.

@@ -181,7 +181,7 @@ Resizes image arrays to specified dimensions.
 resized = fitsbolt.resize_images(
     images=raw_images,
     size=[224, 224],           # Target size [height, width]
-    interpolation_order=1,     # 0-4: nearest, linear, lanczos, 4=inter area (alwayse used for downsizing)
+    interpolation_order=1,     # 0-4: nearest, linear, cubic, lanczos, 4=inter area (alwayse used for downsizing)
     output_dtype=np.float32,   # Recommended: float32 for processing chain
     show_progress=True
 )

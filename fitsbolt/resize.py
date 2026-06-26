@@ -55,6 +55,7 @@ def resize_images(
         size (tuple, optional): Target size for resizing (height, width). If None, no resizing is done.
         interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
                                              downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
+                                             0= nearest, 1= linear , 2=cubic, 3= lanczos4, 4= inter_area
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
         use_multiprocessing (bool, optional): Use ProcessPoolExecutor instead of ThreadPoolExecutor.
@@ -113,6 +114,7 @@ def resize_image(
         size (tuple, optional): Target size for resizing (height, width). If None, no resizing is done.
         interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
                                              downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
+                                             0= nearest, 1= linear , 2=cubic, 3= lanczos4, 4= inter_area
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
     Returns:
