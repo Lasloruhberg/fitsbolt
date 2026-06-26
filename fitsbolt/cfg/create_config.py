@@ -148,7 +148,8 @@ def create_config(
     cfg.normalisation.asinh_clip = norm_asinh_clip
     # int or None, number of pixels to subsample when estimating the asinh percentile bounds
     # (None = use all pixels, exact):
-    # check that not both norm_asinh_n_samples and norm_percentile_samples are set, if so raise a warning and use norm_asinh_n_samples
+    # check that not both norm_asinh_n_samples and norm_percentile_samples are set,
+    # if so raise a warning and use norm_asinh_n_samples
     if norm_asinh_n_samples is not None and norm_percentile_samples is not None:
         warnings.warn(
             "Both norm_asinh_n_samples and norm_percentile_samples are set. Using norm_percentile_samples."
@@ -159,8 +160,10 @@ def create_config(
     )
 
     cfg.normalisation.asinh_n_samples = norm_samples
-    cfg.normalisation.percentile_n_samples = norm_samples  # int or None, number of pixels to subsample when estimating the percentile bounds
-    cfg.normalisation.minmax_n_samples = norm_minmax_samples  # int or None, number of pixels to subsample when estimating the min/max bounds
+    # int or None, number of pixels to subsample when estimating the percentile bounds
+    cfg.normalisation.percentile_n_samples = norm_samples
+    # int or None, number of pixels to subsample when estimating the min/max bounds
+    cfg.normalisation.minmax_n_samples = norm_minmax_samples
 
     # ZSCALE settings
     cfg.normalisation.zscale = DotMap()
