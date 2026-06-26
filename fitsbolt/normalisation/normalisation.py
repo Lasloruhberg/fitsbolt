@@ -521,10 +521,11 @@ def _asinh_normalisation(data, cfg):
                 )
 
     # correct to 0-1 range and convert to uint8
-    min_value = np.min(normalised)
-    max_value = np.max(normalised)
-    if min_value < max_value:
-        return _type_conversion((normalised - min_value) / (max_value - min_value), cfg)
+    # check that the image is not entirely black
+    first = normalised.flat[0]
+    if np.any(normalised != first):
+        return _type_conversion(normalised, cfg)
+
     else:
 
         warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
