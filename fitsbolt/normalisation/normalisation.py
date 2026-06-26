@@ -417,7 +417,7 @@ def _percentile_clip_vmin_vmax(channel_data, clip_percentile, n_samples):
     Returns:
         tuple: The lower and upper percentile values.
     """
-    sample = _flatten_and_subsample(channel_data, n_samples)
+    sample = _flatten_and_subsample(channel_data.copy(), n_samples)
     lower = (100.0 - clip_percentile) / 2.0
 
     k1 = int((lower / 100) * (sample.size - 1))
@@ -432,7 +432,6 @@ def _apply_asinh_norm(data, vmin, vmax, scale, cfg, recompute=False):
     Returns:
         np.ndarray: The transformed image data in [0,1]"""
     data = np.clip((data - vmin) / (vmax - vmin), 0.0, 1.0)
-
     np.true_divide(data, scale, out=data)
     np.arcsinh(data, out=data)
 
@@ -440,7 +439,6 @@ def _apply_asinh_norm(data, vmin, vmax, scale, cfg, recompute=False):
     if denominator is None or recompute:
         denominator = np.arcsinh(1.0 / scale)
     np.true_divide(data, denominator, out=data)
-
     return data
 
 
@@ -468,7 +466,6 @@ def _asinh_normalisation(data, cfg):
     """
     # Determine whether we are dealing with RGB+.... or not
     channels = data.shape[-1] if data.ndim == 3 else 1
-
     # Prepare per-channel parameters
     # we want to keep it coloursafe if scale and clip both are lists of len 1
     colour_safe = False
@@ -489,7 +486,6 @@ def _asinh_normalisation(data, cfg):
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
     data = np.clip(data, min_value, max_value)
-    print("asinh min max", min_value, max_value)
     # Apply asinh normalisation & percentile clipping, potentially per-channel
     if channels == 1:
         vmin, vmax = _percentile_clip_vmin_vmax(
@@ -512,7 +508,6 @@ def _asinh_normalisation(data, cfg):
             vmin = vmins.min()
             vmax = vmaxs.max()
 
-            print("after pec clip", vmin, vmax)
             normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
 
         else:
@@ -530,7 +525,6 @@ def _asinh_normalisation(data, cfg):
     # correct to 0-1 range and convert to uint8
     # check that the image is not entirely black
     first = normalised.flat[0]
-    print(normalised.min(), normalised.max(), normalised)
     if np.any(normalised != first):
         return _type_conversion(np.clip(normalised, 0.0, 1.0), cfg)
 

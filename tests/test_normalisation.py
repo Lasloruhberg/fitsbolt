@@ -648,15 +648,17 @@ class TestNormalisationRobustness:
 
         image_non_cs = np.zeros((3, 3, 3), dtype=np.uint8)
         image_non_cs[0, 0, :] = [255, 100, 10]  # Red pixel
+        image_non_cs[1, 1, :] = [255, 100, 10]  # Red pixel
+        image_non_cs[2, 2, :] = [255, 100, 10]  # Red pixel
 
         result_colour_safe_asinh = _normalise_image(image, asinh_cs_cfg)
-        print("Done asinh cs \n\n\n ", image[0, 0, :], result_colour_safe_asinh[0, 0, :])
+        # print("Done asinh cs \n\n\n ", image[0, 0, :], result_colour_safe_asinh[0, 0, :])
 
         result_colour_non_safe_asinh = _normalise_image(image_non_cs, asing_non_cs_cfg)
         # ASINH TEST
         # Check that the red pixel remains red and blue pixel remains blue
         # and that the green is in between
-        print("Read this \n\n\n ", image_non_cs[0, 0, :], result_colour_non_safe_asinh[0, 0, :])
+        # print("Read this \n\n\n ", image_non_cs[0, 0, :], result_colour_non_safe_asinh[0, 0, :])
 
         assert (
             result_colour_safe_asinh[0, 0, 0] > result_colour_safe_asinh[0, 0, 1]
