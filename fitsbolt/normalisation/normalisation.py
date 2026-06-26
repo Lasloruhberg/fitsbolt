@@ -426,7 +426,7 @@ def _asinh_channel_vmin_vmax(channel_data, clip_percentile, n_samples):
     return sample[k1], sample[k2]
 
 
-def _apply_asinh_norm(data, vmin, vmax, scale, cfg):
+def _apply_asinh_norm(data, vmin, vmax, scale, cfg, recompute=False):
     """Apply asinh normalisation to the data using the provided configuration.
     First clip and limit to 0,1, then apply astropy like asinh
     Returns:
@@ -437,7 +437,7 @@ def _apply_asinh_norm(data, vmin, vmax, scale, cfg):
     np.arcsinh(data, out=data)
 
     denominator = cfg.get("normalisation.precomputed_asinh_inverse_asinh_scale", None)
-    if denominator is None:
+    if denominator is None or recompute:
         denominator = np.arcsinh(1.0 / scale)
     np.true_divide(data, denominator, out=data)
 
@@ -494,17 +494,9 @@ def _asinh_normalisation(data, cfg):
 
     # Apply asinh normalisation & percentile clipping, potentially per-channel
     n_samples = cfg.normalisation.asinh_n_samples
-    viz = _get_astropy_viz()
     if channels == 1:
         vmin, vmax = _asinh_channel_vmin_vmax(data, clip[0], n_samples)
-        norm = viz["ImageNormalize"](
-            data,
-            vmin=vmin,
-            vmax=vmax,
-            stretch=viz["AsinhStretch"](scale[0]),
-            clip=True,
-        )
-        normalised = norm(data)
+        normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
     else:
         if colour_safe:
             # compute all vmins and vmaxs first and then take max/min over all
@@ -516,14 +508,7 @@ def _asinh_normalisation(data, cfg):
 
             vmin = vmins.min()
             vmax = vmaxs.max()
-            norm = viz["ImageNormalize"](
-                data,
-                vmin=vmin,
-                vmax=vmax,
-                stretch=viz["AsinhStretch"](scale[0]),
-                clip=True,
-            )
-            normalised = norm(data)
+            normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
 
         else:
             # normalise each channel individually
@@ -531,14 +516,9 @@ def _asinh_normalisation(data, cfg):
 
             for c in range(channels):
                 vmin, vmax = _asinh_channel_vmin_vmax(data[..., c], clip[c], n_samples)
-                norm = viz["ImageNormalize"](
-                    data[..., c],
-                    vmin=vmin,
-                    vmax=vmax,
-                    stretch=viz["AsinhStretch"](scale[c]),
-                    clip=True,
+                normalised[..., c] = _apply_asinh_norm(
+                    data[..., c], vmin, vmax, scale[c], cfg, recompute=True
                 )
-                normalised[..., c] = norm(data[..., c])
 
     # correct to 0-1 range and convert to uint8
     min_value = np.min(normalised)
