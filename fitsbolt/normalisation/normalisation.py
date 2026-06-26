@@ -431,7 +431,7 @@ def _apply_asinh_norm(data, vmin, vmax, scale, cfg, recompute=False):
     First clip and limit to 0,1, then apply astropy like asinh
     Returns:
         np.ndarray: The transformed image data in [0,1]"""
-    data = np.clip((data - vmin) / (vmax - vmin), 0, 1)
+    data = np.clip((data - vmin) / (vmax - vmin), 0.0, 1.0)
 
     np.true_divide(data, scale, out=data)
     np.arcsinh(data, out=data)
@@ -471,18 +471,16 @@ def _asinh_normalisation(data, cfg):
 
     # Prepare per-channel parameters
     # we want to keep it coloursafe if scale and clip both are lists of len 1
+    colour_safe = False
     if isinstance(cfg.normalisation.asinh_scale, (list, tuple)) and isinstance(
         cfg.normalisation.asinh_clip, (list, tuple)
     ):
-        colour_safe = (
-            len(cfg.normalisation.asinh_scale) == 1 and len(cfg.normalisation.asinh_clip) == 1
-        )
-        # precompute for speedup
-        cfg.normalisation.precomputed_asinh_inverse_asinh_scale = np.arcsinh(
-            1.0 / cfg.normalisation.asinh_scale[0]
-        )
-    else:
-        colour_safe = False
+        if len(cfg.normalisation.asinh_scale) == 1 and len(cfg.normalisation.asinh_clip) == 1:
+            colour_safe = True
+            # precompute for speedup
+            cfg.normalisation.precomputed_asinh_inverse_asinh_scale = np.arcsinh(
+                1.0 / cfg.normalisation.asinh_scale[0]
+            )
 
     scale = _expand(cfg.normalisation.asinh_scale, channels)
     clip = _expand(cfg.normalisation.asinh_clip, channels)
@@ -491,15 +489,17 @@ def _asinh_normalisation(data, cfg):
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
     data = np.clip(data, min_value, max_value)
-
+    print("asinh min max", min_value, max_value)
     # Apply asinh normalisation & percentile clipping, potentially per-channel
     if channels == 1:
         vmin, vmax = _percentile_clip_vmin_vmax(
             data, clip[0], cfg.normalisation.percentile_n_samples
         )
         normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
+    # Multi channel case: either colour-safe or per-channel normalisation
     else:
         if colour_safe:
+
             # compute all vmins and vmaxs first and then take max/min over all
             vmins = np.empty(channels)
             vmaxs = np.empty(channels)
@@ -511,6 +511,8 @@ def _asinh_normalisation(data, cfg):
 
             vmin = vmins.min()
             vmax = vmaxs.max()
+
+            print("after pec clip", vmin, vmax)
             normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
 
         else:
@@ -528,8 +530,9 @@ def _asinh_normalisation(data, cfg):
     # correct to 0-1 range and convert to uint8
     # check that the image is not entirely black
     first = normalised.flat[0]
+    print(normalised.min(), normalised.max(), normalised)
     if np.any(normalised != first):
-        return _type_conversion(normalised, cfg)
+        return _type_conversion(np.clip(normalised, 0.0, 1.0), cfg)
 
     else:
 
@@ -569,8 +572,17 @@ def _apply_midtones_on_normalised_data(x, m):
     return output
 
 
-def _find_mean_of_normalised(normalised_data, cfg):
-    """Find the midtones balance parameter m for the given normalised data."""
+def _find_mean_of_normalised(normalised_data, cfg, channel_index):
+    """Find the midtones balance parameter m for the given normalised data.
+
+    Args:
+        normalised_data is expected to be in the range [0, 1] and m is computed based on the mean of the data.
+        cfg is a fitsbolt configuration object that contains the desired mean for the midtones normalisation.
+        channel_index is the index of the channel for which to compute the midtones balance parameter.
+
+    Returns:
+        float: The midtones balance parameter m.
+    """
     if cfg.normalisation.midtones.crop is not None:
         h, w = cfg.normalisation.midtones.crop
         assert (
@@ -581,7 +593,11 @@ def _find_mean_of_normalised(normalised_data, cfg):
     else:
         normalised_data_cut = normalised_data
     x = np.mean(normalised_data_cut)
-    alpha = cfg.normalisation.midtones.desired_mean
+
+    # failsafe to avoid crashes when channel is longer than expected
+    if channel_index >= len(cfg.normalisation.midtones.desired_mean):
+        channel_index = -1
+    alpha = cfg.normalisation.midtones.desired_mean[channel_index]
     return (x - alpha * x) / (x - 2 * alpha * x + alpha)
 
 
@@ -612,7 +628,8 @@ def _midtones_normalisation(data, cfg):
         cfg.normalisation.midtones.desired_mean, (list, tuple)
     ):
         colour_safe = (
-            len(cfg.normalisation.asinh_scale) == 1 and len(cfg.normalisation.asinh_clip) == 1
+            len(cfg.normalisation.midtones.percentile) == 1
+            and len(cfg.normalisation.midtones.desired_mean) == 1
         )
     else:
         colour_safe = False
@@ -628,7 +645,7 @@ def _midtones_normalisation(data, cfg):
             if cfg.normalisation.midtones.percentile:
                 min_value, max_value = _percentile_clip_vmin_vmax(
                     data[..., c],
-                    cfg.normalisation.midtones.percentile,
+                    cfg.normalisation.midtones.percentile[0],
                     cfg.normalisation.percentile_n_samples,
                 )
 
@@ -641,7 +658,7 @@ def _midtones_normalisation(data, cfg):
         # include necessary clipping
         min_value = np.min(min_values)
         max_value = np.max(max_values)
-        data = np.clip(data[..., c], min_value, max_value)
+        data = np.clip(data, min_value, max_value)
 
         # Skip MTF for constant channels (avoids division by zero)
         if min_value >= max_value:
@@ -650,20 +667,23 @@ def _midtones_normalisation(data, cfg):
         else:
             normalised = (data - min_value) / (max_value - min_value)
 
-            m = _find_mean_of_normalised(normalised, cfg)
+            m = _find_mean_of_normalised(normalised, cfg, channel_index=0)
             # Apply the MTF to the image
-            for c in range(data.shape[-1]):
-                transformed_channel = _apply_midtones_on_normalised_data(normalised[..., c], m)
-                data[..., c] = transformed_channel
+            data = _apply_midtones_on_normalised_data(normalised, m)
+
     # if user wants the non-colousafe mode
     else:
         # create a for loop over the channel to calculate m and apply MTF on a channel basis
         for c in range(data.shape[-1]):
             # do a channel-wise percentile clip
             if cfg.normalisation.midtones.percentile:
+                if c >= len(cfg.normalisation.midtones.percentile):
+                    percentile = cfg.normalisation.midtones.percentile[-1]
+                else:
+                    percentile = cfg.normalisation.midtones.percentile[c]
                 min_value, max_value = _percentile_clip_vmin_vmax(
                     data[..., c],
-                    cfg.normalisation.midtones.percentile,
+                    percentile,
                     cfg.normalisation.minmax_n_samples,
                 )
             else:
@@ -680,7 +700,7 @@ def _midtones_normalisation(data, cfg):
 
             normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
 
-            m = _find_mean_of_normalised(normalised_channel, cfg)
+            m = _find_mean_of_normalised(normalised_channel, cfg, channel_index=c)
             # Apply the MTF to the image
             transformed_channel = _apply_midtones_on_normalised_data(normalised_channel, m)
 
@@ -691,7 +711,9 @@ def _midtones_normalisation(data, cfg):
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
     if min_value < max_value:
-        return _type_conversion((data - min_value) / (max_value - min_value), cfg)
+        return _type_conversion(
+            (np.clip(data, min_value, max_value) - min_value) / (max_value - min_value), cfg
+        )
     else:
 
         warnings.warn("Image maximum is not larger than minimum, returning conversion only.")

@@ -636,24 +636,28 @@ class TestNormalisationRobustness:
         """Test that midtones and asinh normalisation retain colour information when using list of one scale,
         percentile and that this breaks when using 3 input parameters for scale and percentile."""
 
-        asinh_cs_cfg = get_asinh_test_config(asinh_scale=[1.0], asinh_clip=[100.0])
+        asinh_cs_cfg = get_asinh_test_config(asinh_scale=[0.2], asinh_clip=[100.0])
         asing_non_cs_cfg = get_asinh_test_config(
             asinh_scale=[1.0, 1.0, 1.0], asinh_clip=[100.0, 100.0, 100.0]
         )
         # create a black image with one red (255,100,10 ), one gray (100,100,100) and one blue (10,100,255) pixel
-        image = np.zeros((3, 3, 3), dtype=np.float32)
-        image[0, 0] = [255, 100, 10]  # Red pixel
-        image[1, 1] = [100, 100, 100]
-        image[2, 2] = [10, 100, 255]  # Blue pixel
+        image = np.zeros((3, 3, 3), dtype=np.uint8)
+        image[0, 0, :] = [255, 100, 10]  # Red pixel
+        image[1, 1, :] = [100, 100, 100]
+        image[2, 2, :] = [10, 100, 255]  # Blue pixel
 
-        image_non_cs = np.zeros((3, 3, 3), dtype=np.float32)
-        image_non_cs[0, 0] = [255, 100, 10]  # Red pixel
+        image_non_cs = np.zeros((3, 3, 3), dtype=np.uint8)
+        image_non_cs[0, 0, :] = [255, 100, 10]  # Red pixel
 
         result_colour_safe_asinh = _normalise_image(image, asinh_cs_cfg)
-        result_colour_non_safe_asinh = _normalise_image(image, asing_non_cs_cfg)
+        print("Done asinh cs \n\n\n ", image[0, 0, :], result_colour_safe_asinh[0, 0, :])
+
+        result_colour_non_safe_asinh = _normalise_image(image_non_cs, asing_non_cs_cfg)
         # ASINH TEST
         # Check that the red pixel remains red and blue pixel remains blue
         # and that the green is in between
+        print("Read this \n\n\n ", image_non_cs[0, 0, :], result_colour_non_safe_asinh[0, 0, :])
+
         assert (
             result_colour_safe_asinh[0, 0, 0] > result_colour_safe_asinh[0, 0, 1]
             and result_colour_safe_asinh[0, 0, 0] > result_colour_safe_asinh[0, 0, 2]
@@ -688,7 +692,7 @@ class TestNormalisationRobustness:
         midtones_non_cs_cfg.normalisation.midtones_percentile = [100.0, 100.0, 100.0]
 
         result_colour_safe_midtones = _normalise_image(image, midtones_cs_cfg)
-        result_colour_non_safe_midtones = _normalise_image(image, midtones_non_cs_cfg)
+        result_colour_non_safe_midtones = _normalise_image(image_non_cs, midtones_non_cs_cfg)
 
         # Check that the red pixel remains red and blue pixel remains blue
         # and that the green is in between
