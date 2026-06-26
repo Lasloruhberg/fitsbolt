@@ -11,6 +11,7 @@ Tests for the normalisation functionality in normalisation.py and NormalisationM
 import numpy as np
 import pytest
 import logging
+from dotmap import DotMap
 
 from fitsbolt.cfg.create_config import create_config
 from fitsbolt.cfg import logger
@@ -24,8 +25,8 @@ from fitsbolt.normalisation.normalisation import (
     _zscale_normalisation,
     _conversiononly_normalisation,
     _asinh_normalisation,
-    _asinh_channel_norm,
-    _get_astropy_viz,
+    _apply_asinh_norm,
+    _percentile_clip_vmin_vmax,
     _expand,
 )
 from fitsbolt.normalisation.NormalisationMethod import NormalisationMethod
@@ -365,7 +366,7 @@ class TestNormalisationMethods:
         cfg = get_asinh_test_config(asinh_scale=[1.0], asinh_clip=[95.0])
 
         # Test with single channel data
-        image = create_gradient_single_channel(dtype=np.float32)
+        image = create_gradient_single_channel(dtype=np.float32)  # type: ignore
         result = _asinh_normalisation(image, cfg)
         assert result.dtype == np.uint8
         assert result.shape == image.shape
@@ -375,7 +376,7 @@ class TestNormalisationMethods:
         cfg = get_asinh_test_config()
 
         # Test with RGB data
-        image = create_gradient_rgb(dtype=np.float32)
+        image = create_gradient_rgb(dtype=np.float32)  # type: ignore
         result = _asinh_normalisation(image, cfg)
         assert result.dtype == np.uint8
         assert result.shape == image.shape
@@ -463,23 +464,21 @@ class TestNormalisationMethods:
         stride is 45; gcd(45, 150)=15, so it would sample only columns
         {0, 15, 30, ...} and miss a source in columns 7-11 entirely. The coprime
         stride walks every column, so vmax must reflect the bright source."""
-        viz = _get_astropy_viz()
         channel = np.full((150, 150), 10.0, dtype=np.float32)
         channel[60:90, 7:12] = 50000.0
+        _, vmax = _percentile_clip_vmin_vmax(channel, 100.0, 2000)
 
-        norm = _asinh_channel_norm(viz, channel, 99.0, 1.0, n_samples=500)
-
-        assert norm.vmax > 1000.0
+        assert vmax > 49000.0
 
     def test_asinh_n_samples_non_square(self):
         """A non-square channel keys the stride off the row length (shape[-1]);
         the subsample path must still produce a finite, in-range result."""
-        viz = _get_astropy_viz()
+        cfg = DotMap(_dynamic=False)
+        cfg.normalisation = DotMap()
         rng = np.random.default_rng(0)
         channel = rng.exponential(50.0, (120, 200)).astype(np.float32)
-
-        norm = _asinh_channel_norm(viz, channel, 99.0, 1.0, n_samples=2000)
-        out = norm(channel)
+        vmin, vmax = _percentile_clip_vmin_vmax(channel, 99.0, n_samples=2000)
+        out = _apply_asinh_norm(channel, vmin, vmax, 1.0, cfg)
 
         assert np.isfinite(out).all()
         assert out.min() >= 0.0 and out.max() <= 1.0
@@ -494,7 +493,7 @@ class TestNormaliseImageIntegration:
 
         for method in methods:
             cfg = get_test_config(method)
-            image = create_gradient_rgb(dtype=np.float32)
+            image = create_gradient_rgb(dtype=np.float32)  # type: ignore
 
             result = _normalise_image(image, cfg)
 
@@ -507,7 +506,7 @@ class TestNormaliseImageIntegration:
 
         for method in methods:
             cfg = get_test_config(method)
-            image = create_gradient_single_channel(dtype=np.float32)
+            image = create_gradient_single_channel(dtype=np.float32)  # type: ignore
 
             result = _normalise_image(image, cfg)
 
@@ -517,7 +516,7 @@ class TestNormaliseImageIntegration:
     def test_normalise_image_multi_channel(self):
         """Test normalise_image with multi-channel images."""
         cfg = get_asinh_test_config([1.0, 1.5, 2.0, 2.5])  # 4 channels
-        image = create_multi_channel_image(dtype=np.float32)
+        image = create_multi_channel_image(dtype=np.float32)  # type: ignore
 
         result = _normalise_image(image, cfg)
 
@@ -529,7 +528,7 @@ class TestNormaliseImageIntegration:
         cfg = get_test_config()
         cfg.normalisation_method = "invalid_method"  # Not a NormalisationMethod enum
 
-        image = create_gradient_rgb(dtype=np.float32)
+        image = create_gradient_rgb(dtype=np.float32)  # type: ignore
         result = _normalise_image(image, cfg)
 
         # Should fall back to conversion only
@@ -630,3 +629,89 @@ class TestNormalisationRobustness:
         result = _normalise_image(image, cfg)
         assert result.dtype == np.uint8
         assert result.shape == (1, 2)
+
+    def test_colour_retention_in_midtones_and_asinh_vs_non_coloursafe_wih_three_input_percentiles(
+        self,
+    ):
+        """Test that midtones and asinh normalisation retain colour information when using list of one scale,
+        percentile and that this breaks when using 3 input parameters for scale and percentile."""
+
+        asinh_cs_cfg = get_asinh_test_config(asinh_scale=[1.0], asinh_clip=[100.0])
+        asing_non_cs_cfg = get_asinh_test_config(
+            asinh_scale=[1.0, 1.0, 1.0], asinh_clip=[100.0, 100.0, 100.0]
+        )
+        # create a black image with one red (255,100,10 ), one gray (100,100,100) and one blue (10,100,255) pixel
+        image = np.zeros((3, 3, 3), dtype=np.float32)
+        image[0, 0] = [255, 100, 10]  # Red pixel
+        image[1, 1] = [100, 100, 100]
+        image[2, 2] = [10, 100, 255]  # Blue pixel
+
+        image_non_cs = np.zeros((3, 3, 3), dtype=np.float32)
+        image_non_cs[0, 0] = [255, 100, 10]  # Red pixel
+
+        result_colour_safe_asinh = _normalise_image(image, asinh_cs_cfg)
+        result_colour_non_safe_asinh = _normalise_image(image, asing_non_cs_cfg)
+        # ASINH TEST
+        # Check that the red pixel remains red and blue pixel remains blue
+        # and that the green is in between
+        assert (
+            result_colour_safe_asinh[0, 0, 0] > result_colour_safe_asinh[0, 0, 1]
+            and result_colour_safe_asinh[0, 0, 0] > result_colour_safe_asinh[0, 0, 2]
+            and result_colour_safe_asinh[0, 0, 1] > result_colour_safe_asinh[0, 0, 2]
+        )  # Red pixel
+        assert (
+            result_colour_safe_asinh[2, 2, 2] > result_colour_safe_asinh[2, 2, 1]
+            and result_colour_safe_asinh[2, 2, 2] > result_colour_safe_asinh[2, 2, 0]
+            and result_colour_safe_asinh[2, 2, 1] > result_colour_safe_asinh[2, 2, 0]
+        )  # Blue pixel
+        # gray pixel assert identity
+        assert (
+            result_colour_safe_asinh[1, 1, 0]
+            == result_colour_safe_asinh[1, 1, 1]
+            == result_colour_safe_asinh[1, 1, 2]
+        )
+
+        # assert that the red pixel is now same in all bands for non colour safe asinh normalisation
+        assert (
+            result_colour_non_safe_asinh[0, 0, 0]
+            == result_colour_non_safe_asinh[0, 0, 1]
+            == result_colour_non_safe_asinh[0, 0, 2]
+        )
+
+        # MIDTONES TEST
+        midtones_cs_cfg = get_test_config(NormalisationMethod.MIDTONES)
+        midtones_cs_cfg.normalisation.midtones_scale = [1.0]
+        midtones_cs_cfg.normalisation.midtones_percentile = [100.0]
+
+        midtones_non_cs_cfg = get_test_config(NormalisationMethod.MIDTONES)
+        midtones_non_cs_cfg.normalisation.midtones_scale = [1.0, 1.0, 1.0]
+        midtones_non_cs_cfg.normalisation.midtones_percentile = [100.0, 100.0, 100.0]
+
+        result_colour_safe_midtones = _normalise_image(image, midtones_cs_cfg)
+        result_colour_non_safe_midtones = _normalise_image(image, midtones_non_cs_cfg)
+
+        # Check that the red pixel remains red and blue pixel remains blue
+        # and that the green is in between
+        assert (
+            result_colour_safe_midtones[0, 0, 0] > result_colour_safe_midtones[0, 0, 1]
+            and result_colour_safe_midtones[0, 0, 0] > result_colour_safe_midtones[0, 0, 2]
+            and result_colour_safe_midtones[0, 0, 1] > result_colour_safe_midtones[0, 0, 2]
+        )  # Red pixel
+        assert (
+            result_colour_safe_midtones[2, 2, 2] > result_colour_safe_midtones[2, 2, 1]
+            and result_colour_safe_midtones[2, 2, 2] > result_colour_safe_midtones[2, 2, 0]
+            and result_colour_safe_midtones[2, 2, 1] > result_colour_safe_midtones[2, 2, 0]
+        )  # Blue pixel
+        # gray pixel assert identity
+        assert (
+            result_colour_safe_midtones[1, 1, 0]
+            == result_colour_safe_midtones[1, 1, 1]
+            == result_colour_safe_midtones[1, 1, 2]
+        )
+
+        # assert that the red pixel is now same in all bands for non colour safe midtones normalisation
+        assert (
+            result_colour_non_safe_midtones[0, 0, 0]
+            == result_colour_non_safe_midtones[0, 0, 1]
+            == result_colour_non_safe_midtones[0, 0, 2]
+        )
