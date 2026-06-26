@@ -630,7 +630,7 @@ class TestNormalisationRobustness:
         assert result.dtype == np.uint8
         assert result.shape == (1, 2)
 
-    def test_colour_retention_in_midtones_and_asinh_vs_non_coloursafe_wih_three_input_percentiles(
+    def test_colour_retention(
         self,
     ):
         """Test that midtones and asinh normalisation retain colour information when using list of one scale,
@@ -686,12 +686,12 @@ class TestNormalisationRobustness:
 
         # MIDTONES TEST
         midtones_cs_cfg = get_test_config(NormalisationMethod.MIDTONES)
-        midtones_cs_cfg.normalisation.midtones_scale = [1.0]
-        midtones_cs_cfg.normalisation.midtones_percentile = [100.0]
+        midtones_cs_cfg.normalisation.midtones.desired_mean = [0.4]
+        midtones_cs_cfg.normalisation.midtones.percentile = [100.0]
 
         midtones_non_cs_cfg = get_test_config(NormalisationMethod.MIDTONES)
-        midtones_non_cs_cfg.normalisation.midtones_scale = [1.0, 1.0, 1.0]
-        midtones_non_cs_cfg.normalisation.midtones_percentile = [100.0, 100.0, 100.0]
+        midtones_non_cs_cfg.normalisation.midtones.desired_mean = [0.4, 0.4, 0.4]
+        midtones_non_cs_cfg.normalisation.midtones.percentile = [100.0, 100.0, 100.0]
 
         result_colour_safe_midtones = _normalise_image(image, midtones_cs_cfg)
         result_colour_non_safe_midtones = _normalise_image(image_non_cs, midtones_non_cs_cfg)

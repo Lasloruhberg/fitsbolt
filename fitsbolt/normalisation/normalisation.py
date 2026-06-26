@@ -611,7 +611,6 @@ def _midtones_normalisation(data, cfg):
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
     data = np.clip(data, min_value, max_value)
-
     data_is_2d = False
     if data.ndim == 2:
         # create dummy channel index
@@ -642,7 +641,6 @@ def _midtones_normalisation(data, cfg):
                     cfg.normalisation.midtones.percentile[0],
                     cfg.normalisation.percentile_n_samples,
                 )
-
             else:
                 # Find the appropriate midtones balance parameter m
                 max_value = _compute_max_value(data[..., c], cfg)
@@ -653,15 +651,14 @@ def _midtones_normalisation(data, cfg):
         min_value = np.min(min_values)
         max_value = np.max(max_values)
         data = np.clip(data, min_value, max_value)
-
         # Skip MTF for constant channels (avoids division by zero)
         if min_value >= max_value:
             data[...] = 0.0
 
         else:
             normalised = (data - min_value) / (max_value - min_value)
-
             m = _find_mean_of_normalised(normalised, cfg, channel_index=0)
+
             # Apply the MTF to the image
             data = _apply_midtones_on_normalised_data(normalised, m)
 
