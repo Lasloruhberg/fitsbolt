@@ -121,6 +121,8 @@ def load_and_process_images(
     norm_maximum_value=None,
     norm_minimum_value=None,
     norm_crop_for_maximum_value=None,
+    norm_minmax_samples=None,
+    norm_percentile_samples=None,
     norm_log_calculate_minimum_value=False,
     norm_log_scale_a=1000.0,
     norm_asinh_scale=[0.7],
@@ -165,6 +167,14 @@ def load_and_process_images(
         norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None implying dynamic.
         norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
                                     the maximum value inside. Defaults to None.
+        norm_minmax_samples (int, optional): If set, the min/max bounds (vmin/vmax) are estimated
+                                            from a deterministic strided subsample of this many pixels per
+                                            channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+        norm_percentile_samples (int, optional): If set, the percentile bounds (vmin/vmax) are estimated
+                                                from a deterministic strided subsample of this many pixels per
+                                                channel instead of all pixels. Trades a small bias in the bright
+                                                tail for a large reduction in cost. Defaults to None (use all pixels, exact).
         Default Log settings
             norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
                                 Defaults to False.
@@ -238,6 +248,8 @@ def load_and_process_images(
             num_workers=num_workers,
             norm_maximum_value=norm_maximum_value,
             norm_minimum_value=norm_minimum_value,
+            norm_minmax_samples=norm_minmax_samples,
+            norm_percentile_samples=norm_percentile_samples,
             norm_log_calculate_minimum_value=norm_log_calculate_minimum_value,
             norm_log_scale_a=norm_log_scale_a,
             norm_crop_for_maximum_value=norm_crop_for_maximum_value,
