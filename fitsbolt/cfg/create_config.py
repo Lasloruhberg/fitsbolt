@@ -132,7 +132,7 @@ def create_config(
     # Normalisation settings
     cfg.normalisation_method = normalisation_method
     # Optional normalisation settings
-    cfg.normalisation = DotMap()
+    cfg.normalisation = DotMap(_dynamic=False)
     cfg.normalisation.maximum_value = norm_maximum_value  # None or float
     cfg.normalisation.minimum_value = norm_minimum_value  # None or float
     cfg.normalisation.crop_for_maximum_value = (
@@ -280,7 +280,9 @@ def _return_required_and_optional_keys():
         "normalisation": ["special_DotMap", None, None, False, None],
         "normalisation.asinh_scale": ["special_asinh_scale", None, None, False, None],
         "normalisation.asinh_clip": ["special_asinh_clip", None, None, False, None],
-        "normalisation.asinh_n_samples": [int, 1, None, True, None],
+        "normalisation.asinh_n_samples": [int, 100, None, True, None],
+        "normalisation.percentile_n_samples": [int, 100, None, True, None],
+        "normalisation.minmax_n_samples": [int, 100, None, True, None],
         "interpolation_order": [int, 0, 4, False, None],  # 0-4 for opencv2 interpolation
         "output_dtype": [type, None, None, False, None],
         # Optional numeric parameters

@@ -148,7 +148,7 @@ def _compute_max_value(data, cfg):
         # make cutout of the image and compute max value
         img_centre_region = _crop_center(data, h, w)
         max_value = np.nanmax(
-            _flatten_and_subsample(img_centre_region, cfg.normalisation.minmax_samples)
+            _flatten_and_subsample(img_centre_region, cfg.normalisation.minmax_n_samples)
         )
 
     else:
@@ -156,7 +156,7 @@ def _compute_max_value(data, cfg):
         max_value = (
             cfg.normalisation.maximum_value
             if cfg.normalisation.maximum_value is not None
-            else np.nanmax(_flatten_and_subsample(data, cfg.normalisation.minmax_samples))
+            else np.nanmax(_flatten_and_subsample(data, cfg.normalisation.minmax_n_samples))
         )
 
     return max_value
@@ -173,7 +173,7 @@ def _compute_min_value(data, cfg):
     min_value = (
         cfg.normalisation.minimum_value
         if cfg.normalisation.minimum_value is not None
-        else np.nanmin(_flatten_and_subsample(data, cfg.normalisation.minmax_samples))
+        else np.nanmin(_flatten_and_subsample(data, cfg.normalisation.minmax_n_samples))
     )
 
     return min_value
@@ -493,9 +493,10 @@ def _asinh_normalisation(data, cfg):
     data = np.clip(data, min_value, max_value)
 
     # Apply asinh normalisation & percentile clipping, potentially per-channel
-    n_samples = cfg.normalisation.asinh_n_samples
     if channels == 1:
-        vmin, vmax = _percentile_clip_vmin_vmax(data, clip[0], n_samples)
+        vmin, vmax = _percentile_clip_vmin_vmax(
+            data, clip[0], cfg.normalisation.percentile_n_samples
+        )
         normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
     else:
         if colour_safe:
@@ -504,7 +505,9 @@ def _asinh_normalisation(data, cfg):
             vmaxs = np.empty(channels)
 
             for c in range(channels):
-                vmins[c], vmaxs[c] = _percentile_clip_vmin_vmax(data[..., c], clip[c], n_samples)
+                vmins[c], vmaxs[c] = _percentile_clip_vmin_vmax(
+                    data[..., c], clip[c], cfg.normalisation.percentile_n_samples
+                )
 
             vmin = vmins.min()
             vmax = vmaxs.max()
@@ -515,7 +518,9 @@ def _asinh_normalisation(data, cfg):
             normalised = np.zeros_like(data, dtype=np.float32)
 
             for c in range(channels):
-                vmin, vmax = _percentile_clip_vmin_vmax(data[..., c], clip[c], n_samples)
+                vmin, vmax = _percentile_clip_vmin_vmax(
+                    data[..., c], clip[c], cfg.normalisation.percentile_n_samples
+                )
                 normalised[..., c] = _apply_asinh_norm(
                     data[..., c], vmin, vmax, scale[c], cfg, recompute=True
                 )
@@ -624,7 +629,7 @@ def _midtones_normalisation(data, cfg):
                 min_value, max_value = _percentile_clip_vmin_vmax(
                     data[..., c],
                     cfg.normalisation.midtones.percentile,
-                    cfg.normalisation.minmax_samples,
+                    cfg.normalisation.percentile_n_samples,
                 )
 
             else:
@@ -659,7 +664,7 @@ def _midtones_normalisation(data, cfg):
                 min_value, max_value = _percentile_clip_vmin_vmax(
                     data[..., c],
                     cfg.normalisation.midtones.percentile,
-                    cfg.normalisation.minmax_samples,
+                    cfg.normalisation.minmax_n_samples,
                 )
             else:
                 # Find the appropriate midtones balance parameter m
