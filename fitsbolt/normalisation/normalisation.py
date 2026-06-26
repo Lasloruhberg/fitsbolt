@@ -74,6 +74,35 @@ def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
         return skimage_util["img_as_ubyte"](data)
 
 
+def _flatten_and_subsample(channel_data, n_samples) -> np.ndarray:
+    """Flatten the data and subsample it to n_samples if n_samples is not None and smaller than the data size.
+    When ``n_samples`` is set and smaller than the channel's pixel count, the
+    percentile bounds (vmin/vmax) are estimated from a deterministic strided
+    subsample rather than from every pixel.
+
+    Returns: A 1D array of samples for computation, either the full flattened data or a strided subsample.
+
+    """
+    if n_samples is not None and channel_data.size > n_samples:
+        flat = channel_data.reshape(-1)
+        # A constant stride over the C-order-flattened image aliases against the
+        # row length: when ``gcd(step, row_length) > 1`` the samples land on only
+        # a few columns, so vmin/vmax get estimated from a vertical sliver of the
+        # frame and miss spatially localised bright sources. Nudging ``step`` to
+        # be coprime with the row length makes the stride walk every column while
+        # keeping the sample count at ~``n_samples`` (so the speed-up is intact).
+        row_length = channel_data.shape[-1]
+        step = max(1, flat.size // n_samples)
+        tries = 0
+        while row_length > 1 and math.gcd(step, row_length) != 1 and tries < row_length:
+            step += 1
+            tries += 1
+        sample = flat[::step]
+        return sample
+    else:
+        return channel_data.reshape(-1)
+
+
 def _crop_center(data: np.ndarray, crop_height: int, crop_width: int) -> np.ndarray:
     """
     Crop the central region of an image.
@@ -118,14 +147,16 @@ def _compute_max_value(data, cfg):
         ), f"Crop size must be positive integers currently {cfg.normalisation.crop_for_maximum_value}"
         # make cutout of the image and compute max value
         img_centre_region = _crop_center(data, h, w)
-        max_value = np.nanmax(img_centre_region)
+        max_value = np.nanmax(
+            _flatten_and_subsample(img_centre_region, cfg.normalisation.minmax_samples)
+        )
 
     else:
         # Compute the maximum value of the image
         max_value = (
             cfg.normalisation.maximum_value
             if cfg.normalisation.maximum_value is not None
-            else np.nanmax(data)
+            else np.nanmax(_flatten_and_subsample(data, cfg.normalisation.minmax_samples))
         )
 
     return max_value
@@ -137,12 +168,12 @@ def _compute_min_value(data, cfg):
         data (numpy array): Input image array, can be high dynamic range
         cfg (DotMap or None): Configuration with optional normalisation values.
     Returns:
-        float: Maximum value for normalisation
+        float: Minimum value for normalisation
     """
     min_value = (
         cfg.normalisation.minimum_value
         if cfg.normalisation.minimum_value is not None
-        else np.nanmin(data)
+        else np.nanmin(_flatten_and_subsample(data, cfg.normalisation.minmax_samples))
     )
 
     return min_value
@@ -364,7 +395,7 @@ def _expand(value, length: int) -> np.ndarray:
     return arr
 
 
-def _asinh_channel_norm(viz, channel_data, clip_percentile, scale, n_samples):
+def _asinh_channel_vmin_vmax(channel_data, clip_percentile, n_samples):
     """Build the astropy asinh ImageNormalize for a single channel.
 
     When ``n_samples`` is set and smaller than the channel's pixel count, the
@@ -379,45 +410,38 @@ def _asinh_channel_norm(viz, channel_data, clip_percentile, scale, n_samples):
     clipping are identical to the exact path.
 
     Args:
-        viz (dict): The lazily-imported astropy.visualization components.
         channel_data (np.ndarray): A single channel of image data.
         clip_percentile (float): Percentile width passed to PercentileInterval.
-        scale (float): Asinh stretch scale for this channel.
         n_samples (int or None): Subsample size, or None to use all pixels.
 
     Returns:
         astropy.visualization.ImageNormalize: Normaliser for the channel.
     """
-    if n_samples is not None and channel_data.size > n_samples:
-        flat = channel_data.reshape(-1)
-        # A constant stride over the C-order-flattened image aliases against the
-        # row length: when ``gcd(step, row_length) > 1`` the samples land on only
-        # a few columns, so vmin/vmax get estimated from a vertical sliver of the
-        # frame and miss spatially localised bright sources. Nudging ``step`` to
-        # be coprime with the row length makes the stride walk every column while
-        # keeping the sample count at ~``n_samples`` (so the speed-up is intact).
-        row_length = channel_data.shape[-1]
-        step = max(1, flat.size // n_samples)
-        tries = 0
-        while row_length > 1 and math.gcd(step, row_length) != 1 and tries < row_length:
-            step += 1
-            tries += 1
-        sample = flat[::step]
-        lower = (100.0 - clip_percentile) / 2.0
-        vmin, vmax = np.percentile(sample, (lower, 100.0 - lower))
-        return viz["ImageNormalize"](
-            channel_data,
-            vmin=vmin,
-            vmax=vmax,
-            stretch=viz["AsinhStretch"](scale),
-            clip=True,
-        )
-    return viz["ImageNormalize"](
-        channel_data,
-        interval=viz["PercentileInterval"](clip_percentile),
-        stretch=viz["AsinhStretch"](scale),
-        clip=True,
-    )
+    sample = _flatten_and_subsample(channel_data, n_samples)
+    lower = (100.0 - clip_percentile) / 2.0
+
+    k1 = int((lower / 100) * (sample.size - 1))
+    k2 = int(((100.0 - lower) / 100) * (sample.size - 1))
+    sample.partition((k1, k2))
+    return sample[k1], sample[k2]
+
+
+def _apply_asinh_norm(data, vmin, vmax, scale, cfg):
+    """Apply asinh normalisation to the data using the provided configuration.
+    First clip and limit to 0,1, then apply astropy like asinh
+    Returns:
+        np.ndarray: The transformed image data in [0,1]"""
+    data = np.clip((data - vmin) / (vmax - vmin), 0, 1)
+
+    np.true_divide(data, scale, out=data)
+    np.arcsinh(data, out=data)
+
+    denominator = cfg.get("normalisation.precomputed_asinh_inverse_asinh_scale", None)
+    if denominator is None:
+        denominator = np.arcsinh(1.0 / scale)
+    np.true_divide(data, denominator, out=data)
+
+    return data
 
 
 def _asinh_normalisation(data, cfg):
@@ -446,6 +470,20 @@ def _asinh_normalisation(data, cfg):
     channels = data.shape[-1] if data.ndim == 3 else 1
 
     # Prepare per-channel parameters
+    # we want to keep it coloursafe if scale and clip both are lists of len 1
+    if isinstance(cfg.normalisation.asinh_scale, (list, tuple)) and isinstance(
+        cfg.normalisation.asinh_clip, (list, tuple)
+    ):
+        colour_safe = (
+            len(cfg.normalisation.asinh_scale) == 1 and len(cfg.normalisation.asinh_clip) == 1
+        )
+        # precompute for speedup
+        cfg.normalisation.precomputed_asinh_inverse_asinh_scale = np.arcsinh(
+            1.0 / cfg.normalisation.asinh_scale[0]
+        )
+    else:
+        colour_safe = False
+
     scale = _expand(cfg.normalisation.asinh_scale, channels)
     clip = _expand(cfg.normalisation.asinh_clip, channels)
 
@@ -458,13 +496,50 @@ def _asinh_normalisation(data, cfg):
     n_samples = cfg.normalisation.asinh_n_samples
     viz = _get_astropy_viz()
     if channels == 1:
-        norm = _asinh_channel_norm(viz, data, clip[0], scale[0], n_samples)
+        vmin, vmax = _asinh_channel_vmin_vmax(data, clip[0], n_samples)
+        norm = viz["ImageNormalize"](
+            data,
+            vmin=vmin,
+            vmax=vmax,
+            stretch=viz["AsinhStretch"](scale[0]),
+            clip=True,
+        )
         normalised = norm(data)
     else:
-        normalised = np.zeros_like(data, dtype=np.float32)
-        for c in range(channels):
-            norm = _asinh_channel_norm(viz, data[..., c], clip[c], scale[c], n_samples)
-            normalised[..., c] = norm(data[..., c])
+        if colour_safe:
+            # compute all vmins and vmaxs first and then take max/min over all
+            vmins = np.empty(channels)
+            vmaxs = np.empty(channels)
+
+            for c in range(channels):
+                vmins[c], vmaxs[c] = _asinh_channel_vmin_vmax(data[..., c], clip[c], n_samples)
+
+            vmin = vmins.min()
+            vmax = vmaxs.max()
+            norm = viz["ImageNormalize"](
+                data,
+                vmin=vmin,
+                vmax=vmax,
+                stretch=viz["AsinhStretch"](scale[0]),
+                clip=True,
+            )
+            normalised = norm(data)
+
+        else:
+            # normalise each channel individually
+            normalised = np.zeros_like(data, dtype=np.float32)
+
+            for c in range(channels):
+                vmin, vmax = _asinh_channel_vmin_vmax(data[..., c], clip[c], n_samples)
+                norm = viz["ImageNormalize"](
+                    data[..., c],
+                    vmin=vmin,
+                    vmax=vmax,
+                    stretch=viz["AsinhStretch"](scale[c]),
+                    clip=True,
+                )
+                normalised[..., c] = norm(data[..., c])
+
     # correct to 0-1 range and convert to uint8
     min_value = np.min(normalised)
     max_value = np.max(normalised)
@@ -656,6 +731,8 @@ def normalise_images(
     norm_log_scale_a=1000.0,
     norm_asinh_scale=[0.7],
     norm_asinh_clip=[99.8],
+    norm_minmax_samples=None,
+    norm_percentile_samples=None,
     norm_asinh_n_samples=None,
     norm_zscale_n_samples=1000,
     norm_zscale_contrast=0.25,
@@ -683,6 +760,15 @@ def normalise_images(
         norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None implying dynamic.
         norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
                                     the maximum value inside. Defaults to None.
+        norm_minmax_samples (int, optional): If set, the min/max bounds (vmin/vmax) are estimated
+                                            from a deterministic strided subsample of this many pixels per
+                                            channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+        norm_percentile_samples (int, optional): If set, the percentile bounds (vmin/vmax) are estimated
+                                                from a deterministic strided subsample of this many pixels per
+                                                channel instead of all pixels. Trades a small bias in the bright
+                                                tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+
         Default Log settings
             norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
                                 Defaults to False.
@@ -752,6 +838,8 @@ def normalise_images(
         norm_log_calculate_minimum_value=norm_log_calculate_minimum_value,
         norm_log_scale_a=norm_log_scale_a,
         norm_crop_for_maximum_value=norm_crop_for_maximum_value,
+        norm_minmax_samples=norm_minmax_samples,
+        norm_percentile_samples=norm_percentile_samples,
         norm_asinh_scale=norm_asinh_scale,
         norm_asinh_clip=norm_asinh_clip,
         norm_asinh_n_samples=norm_asinh_n_samples,

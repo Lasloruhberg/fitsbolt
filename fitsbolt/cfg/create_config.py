@@ -24,6 +24,8 @@ def create_config(
     normalisation_method=NormalisationMethod.CONVERSION_ONLY,
     channel_combination=None,
     num_workers=4,
+    norm_minmax_samples=None,
+    norm_percentile_samples=None,
     norm_maximum_value=None,
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
@@ -66,6 +68,15 @@ def create_config(
         norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
                                     the maximum value inside. Defaults to None.
 
+        norm_minmax_samples (int, optional): If set, the min/max bounds (vmin/vmax) are estimated
+                                            from a deterministic strided subsample of this many pixels per
+                                            channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+        norm_percentile_samples (int, optional): If set, the percentile bounds (vmin/vmax) are estimated
+                                                from a deterministic strided subsample of this many pixels per
+                                                channel instead of all pixels. Trades a small bias in the bright
+                                                tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+
         Default Log settings
             norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
                                 Defaults to False.
@@ -76,10 +87,9 @@ def create_config(
             norm_asinh_clip (list, optional): Clip values for asinh normalisation,
                                                 should have the length of n_output_channels or 1. Defaults to [99.8].
             norm_asinh_n_samples (int, optional): If set, the asinh percentile bounds (vmin/vmax) are estimated
-                                                from a deterministic strided subsample of this many pixels per
-                                                channel instead of all pixels. Trades a small bias in the bright
-                                                tail for a large reduction in cost (the percentile dominates the
-                                                asinh stretch). Defaults to None (use all pixels, exact).
+                                                from a deterministic strided subsample. Is identical to norm_percentile_samples.
+                                                Kept for backwards compatibility.
+                                                Defaults to None (use all pixels, exact).
         Default ZScale settings (from astropy ZScaleInterval):
             norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
             norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
@@ -135,7 +145,19 @@ def create_config(
     cfg.normalisation.asinh_clip = norm_asinh_clip
     # int or None, number of pixels to subsample when estimating the asinh percentile bounds
     # (None = use all pixels, exact):
-    cfg.normalisation.asinh_n_samples = norm_asinh_n_samples
+    # check that not both norm_asinh_n_samples and norm_percentile_samples are set, if so raise a warning and use norm_asinh_n_samples
+    if norm_asinh_n_samples is not None and norm_percentile_samples is not None:
+        warnings.warn(
+            "Both norm_asinh_n_samples and norm_percentile_samples are set. Using norm_percentile_samples."
+        )
+    # set a sample size
+    norm_samples = (
+        norm_percentile_samples if norm_percentile_samples is not None else norm_asinh_n_samples
+    )
+
+    cfg.normalisation.asinh_n_samples = norm_samples
+    cfg.normalisation.percentile_n_samples = norm_samples  # int or None, number of pixels to subsample when estimating the percentile bounds
+    cfg.normalisation.minmax_n_samples = norm_minmax_samples  # int or None, number of pixels to subsample when estimating the min/max bounds
 
     # ZSCALE settings
     cfg.normalisation.zscale = DotMap()

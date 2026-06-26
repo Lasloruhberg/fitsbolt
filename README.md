@@ -399,6 +399,12 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **norm_maximum_value**: Maximum value for normalisation (overrides auto-detection)
 - **norm_minimum_value**: Minimum value for normalisation (overrides auto-detection)
 - **norm_crop_for_maximum_value**: Tuple (height, width) to crop around center for max value calculation
+- **norm_minmax_samples** (int, optional): If set, the min/max bounds (vmin/vmax) are estimated from a deterministic strided 
+                                            subsample of this many pixels per channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+- **norm_percentile_samples** (int, optional): If set, the percentile bounds (vmin/vmax) are estimated from a deterministic strided 
+                                            subsample of this many pixels per channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
 
 ##### Log Normalisation Parameters
 - **norm_log_calculate_minimum_value**: Whether to calculate minimum for log scaling (default: False)
