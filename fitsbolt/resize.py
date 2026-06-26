@@ -46,6 +46,7 @@ def resize_images(
 ):
     """
     Resize an image to the specified size using opencv2's resize function.
+    Arrays are cast into float 32, resized and converted
 
     Args:
         images (list(numpy.ndarray)): List of image arrays to resize
@@ -103,6 +104,7 @@ def resize_image(
 ):
     """
     Resize an image to the specified size using opencv2's resize function.
+    Arrays are cast into float 32, resized and converted
 
     Args:
         image (numpy.ndarray): Image array to resize
@@ -128,6 +130,7 @@ def resize_image(
 
 def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
     """Resize an image to the specified size using opencv2's resize function.
+    Arrays are cast into float 32, resized and converted
 
     Args:
         image (np.ndarray): Image array to resize
@@ -166,7 +169,7 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
 
         # cv2 internally returns the input dtype
         image = resize_func(
-            np.ascontiguousarray(image),
+            np.ascontiguousarray(image, dtype=np.float32),
             cfg.size,
             interpolation=interpolation_flag,
         )
