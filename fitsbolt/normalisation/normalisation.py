@@ -431,11 +431,14 @@ def _apply_asinh_norm(data, vmin, vmax, scale, cfg, recompute=False):
     First clip and limit to 0,1, then apply astropy like asinh
     Returns:
         np.ndarray: The transformed image data in [0,1]"""
+    denominator = vmax - vmin
+    if denominator == 0:
+        return np.zeros_like(data, dtype=np.float32)
     data = np.clip((data - vmin) / (vmax - vmin), 0.0, 1.0)
     np.true_divide(data, scale, out=data)
     np.arcsinh(data, out=data)
 
-    denominator = cfg.get("normalisation.precomputed_asinh_inverse_asinh_scale", None)
+    denominator = cfg.normalisation.get("precomputed_asinh_inverse_asinh_scale", None)
     if denominator is None or recompute:
         denominator = np.arcsinh(1.0 / scale)
     np.true_divide(data, denominator, out=data)
@@ -675,7 +678,7 @@ def _midtones_normalisation(data, cfg):
                 min_value, max_value = _percentile_clip_vmin_vmax(
                     data[..., c],
                     percentile,
-                    cfg.normalisation.minmax_n_samples,
+                    cfg.normalisation.percentile_n_samples,
                 )
             else:
                 # Find the appropriate midtones balance parameter m

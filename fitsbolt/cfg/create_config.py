@@ -179,9 +179,15 @@ def create_config(
 
     # MTF settings
     cfg.normalisation.midtones = DotMap()
-    # float, in ]0., 100.] : percentile for MTF applied to each channel
+    # List of floats, in ]0., 100.] : percentile for MTF applied to each channel, length 1 for colour-safe
+    # or length n_channels for per-channel MTF
+    # convert float or int to list of length 1 (keeps backwards compatibility)
+    if isinstance(norm_midtones_percentile, (float, int)):
+        norm_midtones_percentile = [norm_midtones_percentile]
     cfg.normalisation.midtones.percentile = norm_midtones_percentile
-    # float in [0,1], desired mean for MTF
+    # List of floats in [0,1], desired mean for MTF, lenght 1 for colour-safe or lenght n_channels for per-channel MTF
+    if isinstance(norm_midtones_desired_mean, (float, int)):
+        norm_midtones_desired_mean = [norm_midtones_desired_mean]
     cfg.normalisation.midtones.desired_mean = norm_midtones_desired_mean
     cfg.normalisation.midtones.crop = norm_midtones_crop
 
@@ -544,6 +550,9 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     f"{param_name} must be a number or list/tuple of n_output_channels numbers in ]0,100.],"
                     + f" got {type(value).__name__}"
                 )
+            for val in value:  # type: ignore
+                if not (0 < val <= 100):
+                    raise ValueError(f"{param_name} values must be in range ]0,100.], got: {value}")
         elif dtype == "special_midtones_desired_mean":
             # check that it is a list of a number in [0,1]
             if not isinstance(value, (list, tuple, int, float)):
@@ -551,6 +560,9 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     f"{param_name} must be a number or list/tuple of n_output_channels numbers in [0,1],"
                     + f" got {type(value).__name__}"
                 )
+            for val in value:  # type: ignore
+                if not (0 <= val <= 1):
+                    raise ValueError(f"{param_name} values must be in range [0,1], got: {value}")
 
         elif dtype == "special_crop":
             if value is not None:

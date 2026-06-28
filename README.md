@@ -161,6 +161,9 @@ images = fitsbolt.read_images(
 
 #### `fitsbolt.normalise_images()`
 Normalises image arrays using various astronomical-optimized methods.
+Per default all normalisations respect relative colours and are applied to all channels simulataneously.
+For Asinh and Midtones the user can provide a list of n_channels values fro percentile clipping or the scale/desired_mean parameters, which 
+in turn changes the normalisation ot a per-channel basis, for cases where, e.g. channel units differ.
 
 ```python
 normalised = fitsbolt.normalise_images(
@@ -412,8 +415,9 @@ Providing different clips and scales for channels overrides the colour preservat
 - **norm_log_scale_a**: Scale factor 'a' for astropy LogStretch (default: 1000.0)
 
 ##### Asinh Normalisation Parameters
-- **norm_asinh_scale**: Channel-wise stretch factors for asinh normalisation (default: \[0.7\])
+- **norm_asinh_scale**: Channel-wise stretch factors for asinh normalisation (default: \[0.7\]). If len>1 coulours will be affected.
 - **norm_asinh_clip**: Channel-wise percentile clipping for asinh normalisation (default: \[99.8\])
+                       Clips symmertically from both sides of the distribution. If len>1 coulours will be affected.
 
 ##### ZScale Normalisation Parameters
 - **norm_zscale_n_samples**: Number of samples for zscale normalisation (default: 1000)
@@ -424,6 +428,7 @@ Providing different clips and scales for channels overrides the colour preservat
 - **norm_zscale_max_iter**: Maximum number of iterations for zscale normalisation (default: 5)
 
 ##### Midtones Normalisation Parameters
-- **norm_midtones_percentile**: List of percentile for clipping applied (default: 99.8) If len>1 coulours will be affected
-- **norm_midtones_desired_mean**: List of target mean brightness value between 0 and 1 (default: 0.2)  If len>1 coulours will be affected
+- **norm_midtones_percentile**: List of percentile for clipping applied (default: 99.8). If len>1 coulours will be affected.
+                                Clips symmertically from both sides of the distribution.
+- **norm_midtones_desired_mean**: List of target mean brightness value between 0 and 1 (default: 0.2).  If len>1 coulours will be affected
 - **norm_midtones_crop**: Optional crop dimensions (height, width) for calculating the mean
