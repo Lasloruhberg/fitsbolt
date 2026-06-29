@@ -620,15 +620,12 @@ def _midtones_normalisation(data, cfg):
         data_is_2d = True
         data = np.expand_dims(data, axis=-1)
 
-    if isinstance(cfg.normalisation.midtones.percentile, (list, tuple)) and isinstance(
-        cfg.normalisation.midtones.desired_mean, (list, tuple)
-    ):
-        colour_safe = (
-            len(cfg.normalisation.midtones.percentile) == 1
-            and len(cfg.normalisation.midtones.desired_mean) == 1
-        )
-    else:
-        colour_safe = False
+    # if there is only one percentile and 1 desired mean - use coulr safe mode
+    # if the user specifies more than one percentile or more than one desired mean, channels are normalised individually
+    colour_safe = (
+        len(cfg.normalisation.midtones.percentile) == 1
+        and len(cfg.normalisation.midtones.desired_mean) == 1
+    )
 
     if colour_safe:
         # create a for loop over the channel to calculate m and apply MTF on a channel basis
