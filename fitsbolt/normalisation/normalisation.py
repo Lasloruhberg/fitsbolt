@@ -206,27 +206,26 @@ def _log_normalisation(data, cfg):
         )
 
     maximum = _compute_max_value(data, cfg=cfg)
-    viz = _get_astropy_viz()
-    if minimum < maximum:
-        norm = viz["ImageNormalize"](
-            data,
-            vmin=minimum,
-            vmax=maximum,
-            stretch=viz["LogStretch"](a=cfg.normalisation.log_scale_a),
-            clip=True,
-        )
-    else:
-        warnings.warn("Image maximum is not larger than minimum, using linear normalisation")
-        norm = viz["ImageNormalize"](
-            data,
-            vmin=None,
-            vmax=None,
-            stretch=viz["LogStretch"](a=cfg.normalisation.log_scale_a),
-            clip=True,
-        )
-    img_normalised = norm(data)  # range 0,1
+    if not minimum < maximum:
+        # would result in a black image
+        minimum = np.nanmin(data)
+        maximum = np.nanmax(data)
+        if minimum < maximum:
+            pass
+        else:
+            warnings.warn("Image maximum is not larger than minimum, using conversion only")
+            return _conversiononly_normalisation(data, cfg=cfg)
+
+    np.clip(data, minimum, maximum, out=data)
+    data = (data - minimum) / (maximum - minimum)  # scale to 0,1
+    a = cfg.normalisation.log_scale_a
+    np.multiply(data, a, out=data)
+    np.add(data, 1.0, out=data)
+    np.log(data, out=data)
+    np.true_divide(data, np.log(a + 1), out=data)
+    # apply log stretch as in astropy
     # Convert back to uint8 range
-    return _type_conversion(img_normalised, cfg)
+    return _type_conversion(data, cfg)
 
 
 def _linear_normalisation(data, cfg):
