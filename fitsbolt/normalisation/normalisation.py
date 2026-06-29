@@ -345,7 +345,8 @@ def _conversiononly_normalisation(data, cfg):
         if maximum > minimum:
             # scale to 0,1
             np.subtract(data, minimum, out=data)
-            np.true_divide(data, maximum - minimum, out=data)
+            # need result in a new copy as divide might induce dtype change
+            data = np.true_divide(data, maximum - minimum)
 
         else:
             np.subtract(data, minimum, out=data)  # should return 0
@@ -367,10 +368,12 @@ def _conversiononly_normalisation(data, cfg):
 
     # ensure valid range
     if maximum > minimum:
-        viz = _get_astropy_viz()
-        norm = viz["ImageNormalize"](data, vmin=minimum, vmax=maximum, clip=True)
-        img_normalised = norm(data)  # range 0,1
-        return _type_conversion(img_normalised, cfg)
+        # ensure data is floating, normalise to 0,1 and clip
+        if not np.issubdtype(data.dtype, np.floating):
+            data = data.astype(np.float32)
+        np.subtract(data, minimum, out=data)
+        np.true_divide(data, maximum - minimum, out=data)
+        return _type_conversion(data, cfg)
     else:
         warnings.warn("Image maximum is not larger than minimum, returning zero array")
         # this is something that can happen with certain settings, so this should not raise an exception
