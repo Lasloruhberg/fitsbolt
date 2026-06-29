@@ -216,14 +216,17 @@ def _log_normalisation(data, cfg):
             warnings.warn("Image maximum is not larger than minimum, using conversion only")
             return _conversiononly_normalisation(data, cfg=cfg)
 
+    # scale to 0,1
     np.clip(data, minimum, maximum, out=data)
-    data = (data - minimum) / (maximum - minimum)  # scale to 0,1
+    np.subtract(data, minimum, out=data)
+    np.true_divide(data, maximum - minimum, out=data)
+
+    # apply log stretch as in astropy
     a = cfg.normalisation.log_scale_a
     np.multiply(data, a, out=data)
     np.add(data, 1.0, out=data)
     np.log(data, out=data)
     np.true_divide(data, np.log(a + 1), out=data)
-    # apply log stretch as in astropy
     # Convert back to uint8 range
     return _type_conversion(data, cfg)
 
@@ -322,7 +325,7 @@ def _conversiononly_normalisation(data, cfg):
     maximum = _compute_max_value(data, cfg)
     minimum = _compute_min_value(data, cfg)
     # clip to cover edge cases
-    data = np.clip(data, minimum, maximum)
+    np.clip(data, minimum, maximum, out=data)
 
     if data.dtype == cfg.output_dtype:
         if np.issubdtype(cfg.output_dtype, np.floating):
@@ -341,9 +344,12 @@ def _conversiononly_normalisation(data, cfg):
             return _type_conversion(data / 65535.0, cfg)  # 65535 = 2^16 - 1
         # if not matching dtype scale to [0,1] and convert
         if maximum > minimum:
-            data = (data - minimum) / (maximum - minimum)
+            # scale to 0,1
+            np.subtract(data, minimum, out=data)
+            np.true_divide(data, maximum - minimum, out=data)
+
         else:
-            data = data - minimum  # should return 0
+            np.subtract(data, minimum, out=data)  # should return 0
         return _type_conversion(data, cfg)
 
     elif cfg.output_dtype == np.uint16:
@@ -487,7 +493,7 @@ def _asinh_normalisation(data, cfg):
     # Get initial min and max and clip values if manual are set
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
-    data = np.clip(data, min_value, max_value)
+    np.clip(data, min_value, max_value, out=data)
     # Apply asinh normalisation & percentile clipping, potentially per-channel
     if channels == 1:
         vmin, vmax = _percentile_clip_vmin_vmax(
@@ -616,7 +622,11 @@ def _midtones_normalisation(data, cfg):
     # Get initial min and max and clip values if manual are set
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
-    data = np.clip(data, min_value, max_value)
+    if min_value >= max_value:
+        warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
+        return _conversiononly_normalisation(data, cfg=cfg)
+
+    np.clip(data, min_value, max_value, out=data)
     data_is_2d = False
     if data.ndim == 2:
         # create dummy channel index
@@ -653,17 +663,18 @@ def _midtones_normalisation(data, cfg):
         # include necessary clipping
         min_value = np.min(min_values)
         max_value = np.max(max_values)
-        data = np.clip(data, min_value, max_value)
+        np.clip(data, min_value, max_value, out=data)
         # Skip MTF for constant channels (avoids division by zero)
         if min_value >= max_value:
             data[...] = 0.0
 
         else:
-            normalised = (data - min_value) / (max_value - min_value)
-            m = _find_mean_of_normalised(normalised, cfg, channel_index=0)
+            np.subtract(data, min_value, out=data)
+            np.true_divide(data, max_value - min_value, out=data)
+            m = _find_mean_of_normalised(data, cfg, channel_index=0)
 
             # Apply the MTF to the image
-            data = _apply_midtones_on_normalised_data(normalised, m)
+            data = _apply_midtones_on_normalised_data(data, m)
 
     # if user wants the non-colousafe mode
     else:
@@ -692,11 +703,14 @@ def _midtones_normalisation(data, cfg):
                 data[..., channel_idx] = 0.0
                 continue
 
-            normalised_channel = (data[..., channel_idx] - min_value) / (max_value - min_value)
+            np.subtract(data[..., channel_idx], min_value, out=data[..., channel_idx])
+            np.true_divide(
+                data[..., channel_idx], max_value - min_value, out=data[..., channel_idx]
+            )
 
-            m = _find_mean_of_normalised(normalised_channel, cfg, channel_index=channel_idx)
+            m = _find_mean_of_normalised(data[..., channel_idx], cfg, channel_index=channel_idx)
             # Apply the MTF to the image
-            transformed_channel = _apply_midtones_on_normalised_data(normalised_channel, m)
+            transformed_channel = _apply_midtones_on_normalised_data(data[..., channel_idx], m)
 
             data[..., channel_idx] = transformed_channel
     if data_is_2d:
@@ -705,12 +719,15 @@ def _midtones_normalisation(data, cfg):
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
     if min_value < max_value:
-        return _type_conversion(
-            (np.clip(data, min_value, max_value) - min_value) / (max_value - min_value), cfg
-        )
-    else:
+        np.clip(data, min_value, max_value, out=data)
+        np.subtract(data, min_value, out=data)
+        np.true_divide(data, max_value - min_value, out=data)
 
-        warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
+        return _type_conversion(data, cfg)
+    else:
+        warnings.warn("Image maximum is not larger than minimum, returning zeros.")
+
+        return np.zeros_like(data, dtype=cfg.output_dtype)
 
         return _conversiononly_normalisation(data, cfg=cfg)
 
