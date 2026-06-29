@@ -211,6 +211,9 @@ def _log_normalisation(data, cfg):
             return _conversiononly_normalisation(data, cfg=cfg)
 
     # scale to 0,1
+    # ensure data is float32 or float64
+    if not np.issubdtype(data.dtype, np.floating):
+        data = data.astype(np.float32)
     np.clip(data, minimum, maximum, out=data)
     np.subtract(data, minimum, out=data)
     np.true_divide(data, maximum - minimum, out=data)
@@ -244,6 +247,9 @@ def _linear_normalisation(data, cfg):
     minimum = _compute_min_value(data, cfg=cfg)
     maximum = _compute_max_value(data, cfg=cfg)
     if minimum < maximum:
+        # ensure data is float32 or float64
+        if not np.issubdtype(data.dtype, np.floating):
+            data = data.astype(np.float32)
         np.clip(data, minimum, maximum, out=data)
         np.subtract(data, minimum, out=data)
         np.true_divide(data, maximum - minimum, out=data)
@@ -487,6 +493,10 @@ def _asinh_normalisation(data, cfg):
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
     np.clip(data, min_value, max_value, out=data)
+    # ensure data is float32 or float64
+    if not np.issubdtype(data.dtype, np.floating):
+        data = data.astype(np.float32)
+
     # Apply asinh normalisation & percentile clipping, potentially per-channel
     if channels == 1:
         vmin, vmax = _percentile_clip_vmin_vmax(
@@ -620,6 +630,10 @@ def _midtones_normalisation(data, cfg):
         return _conversiononly_normalisation(data, cfg=cfg)
 
     np.clip(data, min_value, max_value, out=data)
+    # ensure data is float32 or float64
+    if not np.issubdtype(data.dtype, np.floating):
+        data = data.astype(np.float32)
+
     data_is_2d = False
     if data.ndim == 2:
         # create dummy channel index
