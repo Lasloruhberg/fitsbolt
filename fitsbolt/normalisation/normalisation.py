@@ -27,20 +27,14 @@ def _get_astropy_viz():
     if _astropy_viz is None:
         from astropy.visualization import (
             ImageNormalize,
-            LogStretch,
             LinearStretch,
             ZScaleInterval,
-            AsinhStretch,
-            PercentileInterval,
         )
 
         _astropy_viz = {
             "ImageNormalize": ImageNormalize,
-            "LogStretch": LogStretch,
             "LinearStretch": LinearStretch,
             "ZScaleInterval": ZScaleInterval,
-            "AsinhStretch": AsinhStretch,
-            "PercentileInterval": PercentileInterval,
         }
     return _astropy_viz
 
@@ -249,19 +243,18 @@ def _linear_normalisation(data, cfg):
 
     minimum = _compute_min_value(data, cfg=cfg)
     maximum = _compute_max_value(data, cfg=cfg)
-    viz = _get_astropy_viz()
     if minimum < maximum:
-        norm = viz["ImageNormalize"](
-            data, vmin=minimum, vmax=maximum, stretch=viz["LinearStretch"](), clip=True
-        )
+        np.clip(data, minimum, maximum, out=data)
+        np.subtract(data, minimum, out=data)
+        np.true_divide(data, maximum - minimum, out=data)
     else:
         warnings.warn(
             "Image maximum is not larger than minimum, only doing conversion normalisation"
         )
         return _conversiononly_normalisation(data, cfg)
-    img_normalised = norm(data)  # range 0,1
+
     # Convert back to type range
-    return _type_conversion(img_normalised, cfg)
+    return _type_conversion(data, cfg)
 
 
 def _zscale_normalisation(data, cfg):
