@@ -503,9 +503,11 @@ def _asinh_normalisation(data, cfg):
             vmins = np.empty(channels)
             vmaxs = np.empty(channels)
 
-            for c in range(channels):
-                vmins[c], vmaxs[c] = _percentile_clip_vmin_vmax(
-                    data[..., c], clip[c], cfg.normalisation.percentile_n_samples
+            for channel_idx in range(channels):
+                vmins[channel_idx], vmaxs[channel_idx] = _percentile_clip_vmin_vmax(
+                    data[..., channel_idx],
+                    clip[channel_idx],
+                    cfg.normalisation.percentile_n_samples,
                 )
 
             vmin = vmins.min()
@@ -517,12 +519,14 @@ def _asinh_normalisation(data, cfg):
             # normalise each channel individually
             normalised = np.zeros_like(data, dtype=np.float32)
 
-            for c in range(channels):
+            for channel_idx in range(channels):
                 vmin, vmax = _percentile_clip_vmin_vmax(
-                    data[..., c], clip[c], cfg.normalisation.percentile_n_samples
+                    data[..., channel_idx],
+                    clip[channel_idx],
+                    cfg.normalisation.percentile_n_samples,
                 )
-                normalised[..., c] = _apply_asinh_norm(
-                    data[..., c], vmin, vmax, scale[c], cfg, recompute=True
+                normalised[..., channel_idx] = _apply_asinh_norm(
+                    data[..., channel_idx], vmin, vmax, scale[channel_idx], cfg, recompute=True
                 )
 
     # correct to 0-1 range and convert to uint8
@@ -632,21 +636,21 @@ def _midtones_normalisation(data, cfg):
         max_values = np.empty(data.shape[-1])
         min_values = np.empty(data.shape[-1])
 
-        for c in range(data.shape[-1]):
+        for channel_idx in range(data.shape[-1]):
             # do a channel-wise percentile clip
 
             if cfg.normalisation.midtones.percentile:
                 min_value, max_value = _percentile_clip_vmin_vmax(
-                    data[..., c],
+                    data[..., channel_idx],
                     cfg.normalisation.midtones.percentile[0],
                     cfg.normalisation.percentile_n_samples,
                 )
             else:
                 # Find the appropriate midtones balance parameter m
-                max_value = _compute_max_value(data[..., c], cfg)
-                min_value = _compute_min_value(data[..., c], cfg)
-            max_values[c] = max_value
-            min_values[c] = min_value
+                max_value = _compute_max_value(data[..., channel_idx], cfg)
+                min_value = _compute_min_value(data[..., channel_idx], cfg)
+            max_values[channel_idx] = max_value
+            min_values[channel_idx] = min_value
         # include necessary clipping
         min_value = np.min(min_values)
         max_value = np.max(max_values)
@@ -665,37 +669,37 @@ def _midtones_normalisation(data, cfg):
     # if user wants the non-colousafe mode
     else:
         # create a for loop over the channel to calculate m and apply MTF on a channel basis
-        for c in range(data.shape[-1]):
+        for channel_idx in range(data.shape[-1]):
             # do a channel-wise percentile clip
             if cfg.normalisation.midtones.percentile:
-                if c >= len(cfg.normalisation.midtones.percentile):
+                if channel_idx >= len(cfg.normalisation.midtones.percentile):
                     percentile = cfg.normalisation.midtones.percentile[-1]
                 else:
-                    percentile = cfg.normalisation.midtones.percentile[c]
+                    percentile = cfg.normalisation.midtones.percentile[channel_idx]
                 min_value, max_value = _percentile_clip_vmin_vmax(
-                    data[..., c],
+                    data[..., channel_idx],
                     percentile,
                     cfg.normalisation.percentile_n_samples,
                 )
             else:
                 # Find the appropriate midtones balance parameter m
-                max_value = _compute_max_value(data[..., c], cfg)
-                min_value = _compute_min_value(data[..., c], cfg)
+                max_value = _compute_max_value(data[..., channel_idx], cfg)
+                min_value = _compute_min_value(data[..., channel_idx], cfg)
             # include necessary clipping
-            data[..., c] = np.clip(data[..., c], min_value, max_value)
+            data[..., channel_idx] = np.clip(data[..., channel_idx], min_value, max_value)
 
             # Skip MTF for constant channels (avoids division by zero)
             if min_value >= max_value:
-                data[..., c] = 0.0
+                data[..., channel_idx] = 0.0
                 continue
 
-            normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
+            normalised_channel = (data[..., channel_idx] - min_value) / (max_value - min_value)
 
-            m = _find_mean_of_normalised(normalised_channel, cfg, channel_index=c)
+            m = _find_mean_of_normalised(normalised_channel, cfg, channel_index=channel_idx)
             # Apply the MTF to the image
             transformed_channel = _apply_midtones_on_normalised_data(normalised_channel, m)
 
-            data[..., c] = transformed_channel
+            data[..., channel_idx] = transformed_channel
     if data_is_2d:
         data = np.squeeze(data, axis=-1)
     # scale entire image to 0,1 and do type conversion
