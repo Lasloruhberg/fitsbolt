@@ -214,7 +214,11 @@ def _log_normalisation(data, cfg):
     # ensure data is float32 or float64
     if not np.issubdtype(data.dtype, np.floating):
         data = data.astype(np.float32)
-    np.clip(data, minimum, maximum, out=data)
+    try:
+        np.clip(data, minimum, maximum, out=data)
+    except:  # noqa: E722
+        # likely the user specified clips that do not match the dtype - this copies the array and casts
+        data = np.clip(data, minimum, maximum)
     np.subtract(data, minimum, out=data)
     np.true_divide(data, maximum - minimum, out=data)
 
@@ -250,7 +254,11 @@ def _linear_normalisation(data, cfg):
         # ensure data is float32 or float64
         if not np.issubdtype(data.dtype, np.floating):
             data = data.astype(np.float32)
-        np.clip(data, minimum, maximum, out=data)
+        try:
+            np.clip(data, minimum, maximum, out=data)
+        except:  # noqa: E722
+            # likely the user specified clips that do not match the dtype - this copies the array and casts
+            data = np.clip(data, minimum, maximum)
         np.subtract(data, minimum, out=data)
         np.true_divide(data, maximum - minimum, out=data)
     else:
@@ -324,7 +332,11 @@ def _conversiononly_normalisation(data, cfg):
     maximum = _compute_max_value(data, cfg)
     minimum = _compute_min_value(data, cfg)
     # clip to cover edge cases
-    np.clip(data, minimum, maximum, out=data)
+    try:
+        np.clip(data, minimum, maximum, out=data)
+    except:  # noqa: E722
+        # likely the user specified clips that do not match the dtype - this copies the array and casts
+        data = np.clip(data, minimum, maximum)
 
     if data.dtype == cfg.output_dtype:
         if np.issubdtype(cfg.output_dtype, np.floating):
@@ -441,7 +453,13 @@ def _apply_asinh_norm(data, vmin, vmax, scale, cfg, recompute=False):
     denominator = vmax - vmin
     if denominator == 0:
         return np.zeros_like(data, dtype=np.float32)
-    data = np.clip((data - vmin) / (vmax - vmin), 0.0, 1.0)
+    try:
+        np.clip(data, vmin, vmax, out=data)
+    except:  # noqa: E722
+        data = np.clip(data, vmin, vmax)
+    np.subtract(data, vmin, out=data)
+    np.true_divide(data, (denominator), out=data)
+
     np.true_divide(data, scale, out=data)
     np.arcsinh(data, out=data)
 
@@ -495,7 +513,11 @@ def _asinh_normalisation(data, cfg):
     # Get initial min and max and clip values if manual are set
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
-    np.clip(data, min_value, max_value, out=data)
+    try:
+        np.clip(data, min_value, max_value, out=data)
+    except:  # noqa: E722
+        # likely the user specified clips that do not match the dtype - this copies the array and casts
+        data = np.clip(data, min_value, max_value)
     # ensure data is float32 or float64
     if not np.issubdtype(data.dtype, np.floating):
         data = data.astype(np.float32)
@@ -631,8 +653,12 @@ def _midtones_normalisation(data, cfg):
     if min_value >= max_value:
         warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
         return _conversiononly_normalisation(data, cfg=cfg)
+    try:
+        np.clip(data, min_value, max_value, out=data)
+    except:  # noqa: E722
+        # likely the user specified clips that do not match the dtype - this copies the array and casts
+        data = np.clip(data, min_value, max_value)
 
-    np.clip(data, min_value, max_value, out=data)
     # ensure data is float32 or float64
     if not np.issubdtype(data.dtype, np.floating):
         data = data.astype(np.float32)
@@ -673,7 +699,11 @@ def _midtones_normalisation(data, cfg):
         # include necessary clipping
         min_value = np.min(min_values)
         max_value = np.max(max_values)
-        np.clip(data, min_value, max_value, out=data)
+        try:
+            np.clip(data, min_value, max_value, out=data)
+        except:  # noqa: E722
+            # likely the user specified clips that do not match the dtype - this copies the array and casts
+            data = np.clip(data, min_value, max_value)
         # Skip MTF for constant channels (avoids division by zero)
         if min_value >= max_value:
             data[...] = 0.0
@@ -729,7 +759,11 @@ def _midtones_normalisation(data, cfg):
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
     if min_value < max_value:
-        np.clip(data, min_value, max_value, out=data)
+        try:
+            np.clip(data, min_value, max_value, out=data)
+        except:  # noqa: E722
+            # likely the user specified clips that do not match the dtype - this copies the array and casts
+            data = np.clip(data, min_value, max_value)
         np.subtract(data, min_value, out=data)
         np.true_divide(data, max_value - min_value, out=data)
 
@@ -738,8 +772,6 @@ def _midtones_normalisation(data, cfg):
         warnings.warn("Image maximum is not larger than minimum, returning zeros.")
 
         return np.zeros_like(data, dtype=cfg.output_dtype)
-
-        return _conversiononly_normalisation(data, cfg=cfg)
 
 
 def _normalise_image(data, cfg):
