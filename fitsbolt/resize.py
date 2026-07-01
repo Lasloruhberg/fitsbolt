@@ -172,7 +172,7 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
         # cv2 internally returns the input dtype
         image = resize_func(
             np.ascontiguousarray(image, dtype=np.float32),
-            cfg.size,
+            (cfg.size[1], cfg.size[0]),  # cv2 expects (width, height)
             interpolation=interpolation_flag,
         )
         if readd_channel:
