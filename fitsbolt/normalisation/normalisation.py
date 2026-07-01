@@ -229,6 +229,7 @@ def _log_normalisation(data, cfg):
     np.log(data, out=data)
     np.true_divide(data, np.log(a + 1), out=data)
     # Convert back to uint8 range
+    np.clip(data, 0.0, 1.0, out=data)
     return _type_conversion(data, cfg)
 
 
@@ -268,6 +269,7 @@ def _linear_normalisation(data, cfg):
         return _conversiononly_normalisation(data, cfg)
 
     # Convert back to type range
+    np.clip(data, 0.0, 1.0, out=data)
     return _type_conversion(data, cfg)
 
 
@@ -385,6 +387,7 @@ def _conversiononly_normalisation(data, cfg):
             data = data.astype(np.float32)
         np.subtract(data, minimum, out=data)
         np.true_divide(data, maximum - minimum, out=data)
+        np.clip(data, 0.0, 1.0, out=data)
         return _type_conversion(data, cfg)
     else:
         warnings.warn("Image maximum is not larger than minimum, returning zero array")
@@ -766,7 +769,7 @@ def _midtones_normalisation(data, cfg):
             data = np.clip(data, min_value, max_value)
         np.subtract(data, min_value, out=data)
         np.true_divide(data, max_value - min_value, out=data)
-
+        np.clip(data, 0.0, 1.0, out=data)
         return _type_conversion(data, cfg)
     else:
         warnings.warn("Image maximum is not larger than minimum, returning zeros.")
