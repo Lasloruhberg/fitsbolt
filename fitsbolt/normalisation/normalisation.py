@@ -97,35 +97,6 @@ def _flatten_and_subsample(channel_data, n_samples) -> np.ndarray:
         return channel_data.reshape(-1)
 
 
-def _flatten_and_subsample(channel_data, n_samples) -> np.ndarray:
-    """Flatten the data and subsample it to n_samples if n_samples is not None and smaller than the data size.
-    When ``n_samples`` is set and smaller than the channel's pixel count, the
-    percentile bounds (vmin/vmax) are estimated from a deterministic strided
-    subsample rather than from every pixel.
-
-    Returns: A 1D array of samples for computation, either the full flattened data or a strided subsample.
-
-    """
-    if n_samples is not None and channel_data.size > n_samples:
-        flat = channel_data.reshape(-1)
-        # A constant stride over the C-order-flattened image aliases against the
-        # row length: when ``gcd(step, row_length) > 1`` the samples land on only
-        # a few columns, so vmin/vmax get estimated from a vertical sliver of the
-        # frame and miss spatially localised bright sources. Nudging ``step`` to
-        # be coprime with the row length makes the stride walk every column while
-        # keeping the sample count at ~``n_samples`` (so the speed-up is intact).
-        row_length = channel_data.shape[-1]
-        step = max(1, flat.size // n_samples)
-        tries = 0
-        while row_length > 1 and math.gcd(step, row_length) != 1 and tries < row_length:
-            step += 1
-            tries += 1
-        sample = flat[::step]
-        return sample
-    else:
-        return channel_data.reshape(-1)
-
-
 def _crop_center(data: np.ndarray, crop_height: int, crop_width: int) -> np.ndarray:
     """
     Crop the central region of an image.
