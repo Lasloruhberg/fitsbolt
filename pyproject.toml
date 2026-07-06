@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fitsbolt"
-version = "0.2.1"
+version = "0.3.0"
 description = "Python module to load and process astronomical images"
 readme = "README.md"
 license = "MIT OR GPL-3.0"
@@ -24,6 +24,7 @@ dependencies = [
     "numpy>=1.26",
     "scikit-image",
     "tqdm",
+    "opencv-python-headless>=4.5",
     "pillow",
     "dotmap",
     "tifffile",

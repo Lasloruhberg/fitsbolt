@@ -12,19 +12,32 @@ from tqdm import tqdm
 from .cfg.create_config import create_config
 from .cfg.logger import logger
 
+# Maps the `interpolation` config value to the cv2 upscaling kernel flag.
+# Downscaling always uses cv2.INTER_AREA regardless of this setting.
+# Lazy import for cv2
+_cv2_resize = None
+_CV2_UPSCALE_INTERPOLATION = None
 
-# Lazy import for skimage.transform
-_skimage_resize = None
 
+def _get_cv2_resize():
+    """Lazy import of cv2.resize."""
+    global _cv2_resize
+    global _CV2_UPSCALE_INTERPOLATION
+    if _cv2_resize is None:
+        from cv2 import resize as cv2_resize
 
-def _get_skimage_resize():
-    """Lazy import of skimage.transform.resize."""
-    global _skimage_resize
-    if _skimage_resize is None:
-        from skimage.transform import resize
+        _cv2_resize = cv2_resize
+    if _CV2_UPSCALE_INTERPOLATION is None:
+        from cv2 import INTER_NEAREST, INTER_LINEAR, INTER_CUBIC, INTER_LANCZOS4, INTER_AREA
 
-        _skimage_resize = resize
-    return _skimage_resize
+        _CV2_UPSCALE_INTERPOLATION = {
+            0: INTER_NEAREST,
+            1: INTER_LINEAR,
+            2: INTER_CUBIC,
+            3: INTER_LANCZOS4,
+            4: INTER_AREA,  # always used for downscaling
+        }
+    return _cv2_resize, _CV2_UPSCALE_INTERPOLATION
 
 
 def _worker_resize_image(image, cfg):
@@ -48,14 +61,17 @@ def resize_images(
     use_multiprocessing=False,
 ):
     """
-    Resize an image to the specified size using skimage's resize function.
+    Resize an image to the specified size using opencv2's resize function.
+    Arrays are cast into float 32, resized and converted
 
     Args:
         images (list(numpy.ndarray)): List of image arrays to resize
         output_dtype (type, optional): Desired output data type for the resized images.
                                        Can be np.unit8, np.uint16 or np.float32. Defaults to np.uint8.
         size (tuple, optional): Target size for resizing (height, width). If None, no resizing is done.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
+                                             downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
+                                             0= nearest, 1= linear , 2=cubic, 3= lanczos4, 4= inter_area
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
         use_multiprocessing (bool, optional): Use ProcessPoolExecutor instead of ThreadPoolExecutor.
@@ -104,14 +120,17 @@ def resize_image(
     image, output_dtype=np.uint8, size=None, interpolation_order=1, log_level="WARNING"
 ):
     """
-    Resize an image to the specified size using skimage's resize function.
+    Resize an image to the specified size using opencv2's resize function.
+    Arrays are cast into float 32, resized and converted
 
     Args:
         image (numpy.ndarray): Image array to resize
         output_dtype (type, optional): Desired output data type for the resized images.
                                        Can be np.unit8, np.uint16 or np.float32. Defaults to np.uint8.
         size (tuple, optional): Target size for resizing (height, width). If None, no resizing is done.
-        interpolation_order (int, optional): Order of interpolation for resizing with skimage, 0-5. Defaults to 1.
+        interpolation_order (int, optional): Order of interpolation for resizing with opencv2, 0-4. Defaults to 1 = linear
+                                             downscaling always uses cv2.INTER_AREA = 4 regardless of this setting.
+                                             0= nearest, 1= linear , 2=cubic, 3= lanczos4, 4= inter_area
         log_level (str, optional): Logging level for the operation. Defaults to "WARNING".
                                    Can be "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", or "CRITICAL".
     Returns:
@@ -128,7 +147,8 @@ def resize_image(
 
 
 def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
-    """Resize an image to the specified size using skimage's resize function.
+    """Resize an image to the specified size using opencv2's resize function.
+    Arrays are cast into float 32, resized and converted
 
     Args:
         image (np.ndarray): Image array to resize
@@ -150,14 +170,29 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
         logger.warning("Received an empty image, returning as is.")
         raise ValueError("Image is empty, cannot resize.")
     if cfg.size is not None and image.shape[:2] != tuple(cfg.size):
-        resize_func = _get_skimage_resize()
-        image = resize_func(
-            image,
-            cfg.size,
-            anti_aliasing=None,
-            order=cfg.interpolation_order if cfg.interpolation_order is not None else 1,
-            preserve_range=True,
+        resize_func, _cv2_interpolation_dict = _get_cv2_resize()
+
+        upscale_interpolation = (
+            _cv2_interpolation_dict[cfg.interpolation_order]
+            if cfg.interpolation_order is not None
+            else _cv2_interpolation_dict[1]  # Default to linear interpolation if not specified
         )
+
+        downscaling = cfg.size[0] < image.shape[0] or cfg.size[1] < image.shape[1]
+        interpolation_flag = _cv2_interpolation_dict[4] if downscaling else upscale_interpolation
+        # cv2 drops channel dimension for single-channel images, so we need to add it back
+        readd_channel = False
+        if image.ndim == 3 and image.shape[2] == 1:
+            readd_channel = True
+
+        # cv2 internally returns the input dtype
+        image = resize_func(
+            np.ascontiguousarray(image, dtype=np.float32),
+            (cfg.size[1], cfg.size[0]),  # cv2 expects (width, height)
+            interpolation=interpolation_flag,
+        )
+        if readd_channel:
+            image = np.expand_dims(image, axis=-1)
         if do_type_conversion and (cfg.output_dtype is not None or output_dtype is not None):
             if output_dtype:
                 target = output_dtype

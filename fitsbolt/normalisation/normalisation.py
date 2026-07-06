@@ -27,20 +27,14 @@ def _get_astropy_viz():
     if _astropy_viz is None:
         from astropy.visualization import (
             ImageNormalize,
-            LogStretch,
             LinearStretch,
             ZScaleInterval,
-            AsinhStretch,
-            PercentileInterval,
         )
 
         _astropy_viz = {
             "ImageNormalize": ImageNormalize,
-            "LogStretch": LogStretch,
             "LinearStretch": LinearStretch,
             "ZScaleInterval": ZScaleInterval,
-            "AsinhStretch": AsinhStretch,
-            "PercentileInterval": PercentileInterval,
         }
     return _astropy_viz
 
@@ -72,6 +66,35 @@ def _type_conversion(data: np.ndarray, cfg) -> np.ndarray:
         # Default to uint8 if output_dtype is not specified or not supported
         warnings.warn(f"Unsupported output dtype: {cfg.output_dtype}, defaulting to uint8")
         return skimage_util["img_as_ubyte"](data)
+
+
+def _flatten_and_subsample(channel_data, n_samples) -> np.ndarray:
+    """Flatten the data and subsample it to n_samples if n_samples is not None and smaller than the data size.
+    When ``n_samples`` is set and smaller than the channel's pixel count, the
+    percentile bounds (vmin/vmax) are estimated from a deterministic strided
+    subsample rather than from every pixel.
+
+    Returns: A 1D array of samples for computation, either the full flattened data or a strided subsample.
+
+    """
+    if n_samples is not None and channel_data.size > n_samples:
+        flat = channel_data.reshape(-1)
+        # A constant stride over the C-order-flattened image aliases against the
+        # row length: when ``gcd(step, row_length) > 1`` the samples land on only
+        # a few columns, so vmin/vmax get estimated from a vertical sliver of the
+        # frame and miss spatially localised bright sources. Nudging ``step`` to
+        # be coprime with the row length makes the stride walk every column while
+        # keeping the sample count at ~``n_samples`` (so the speed-up is intact).
+        row_length = channel_data.shape[-1]
+        step = max(1, flat.size // n_samples)
+        tries = 0
+        while row_length > 1 and math.gcd(step, row_length) != 1 and tries < row_length:
+            step += 1
+            tries += 1
+        sample = flat[::step]
+        return sample
+    else:
+        return channel_data.reshape(-1)
 
 
 def _crop_center(data: np.ndarray, crop_height: int, crop_width: int) -> np.ndarray:
@@ -118,14 +141,16 @@ def _compute_max_value(data, cfg):
         ), f"Crop size must be positive integers currently {cfg.normalisation.crop_for_maximum_value}"
         # make cutout of the image and compute max value
         img_centre_region = _crop_center(data, h, w)
-        max_value = np.nanmax(img_centre_region)
+        max_value = np.nanmax(
+            _flatten_and_subsample(img_centre_region, cfg.normalisation.minmax_n_samples)
+        )
 
     else:
         # Compute the maximum value of the image
         max_value = (
             cfg.normalisation.maximum_value
             if cfg.normalisation.maximum_value is not None
-            else np.nanmax(data)
+            else np.nanmax(_flatten_and_subsample(data, cfg.normalisation.minmax_n_samples))
         )
 
     return max_value
@@ -137,12 +162,12 @@ def _compute_min_value(data, cfg):
         data (numpy array): Input image array, can be high dynamic range
         cfg (DotMap or None): Configuration with optional normalisation values.
     Returns:
-        float: Maximum value for normalisation
+        float: Minimum value for normalisation
     """
     min_value = (
         cfg.normalisation.minimum_value
         if cfg.normalisation.minimum_value is not None
-        else np.nanmin(data)
+        else np.nanmin(_flatten_and_subsample(data, cfg.normalisation.minmax_n_samples))
     )
 
     return min_value
@@ -175,27 +200,37 @@ def _log_normalisation(data, cfg):
         )
 
     maximum = _compute_max_value(data, cfg=cfg)
-    viz = _get_astropy_viz()
-    if minimum < maximum:
-        norm = viz["ImageNormalize"](
-            data,
-            vmin=minimum,
-            vmax=maximum,
-            stretch=viz["LogStretch"](a=cfg.normalisation.log_scale_a),
-            clip=True,
-        )
-    else:
-        warnings.warn("Image maximum is not larger than minimum, using linear normalisation")
-        norm = viz["ImageNormalize"](
-            data,
-            vmin=None,
-            vmax=None,
-            stretch=viz["LogStretch"](a=cfg.normalisation.log_scale_a),
-            clip=True,
-        )
-    img_normalised = norm(data)  # range 0,1
+    if not minimum < maximum:
+        # would result in a black image
+        minimum = np.nanmin(data)
+        maximum = np.nanmax(data)
+        if minimum < maximum:
+            pass
+        else:
+            warnings.warn("Image maximum is not larger than minimum, using conversion only")
+            return _conversiononly_normalisation(data, cfg=cfg)
+
+    # scale to 0,1
+    # ensure data is float32 or float64
+    if not np.issubdtype(data.dtype, np.floating):
+        data = data.astype(np.float32)
+    try:
+        np.clip(data, minimum, maximum, out=data)
+    except:  # noqa: E722
+        # likely the user specified clips that do not match the dtype - this copies the array and casts
+        data = np.clip(data, minimum, maximum)
+    np.subtract(data, minimum, out=data)
+    np.true_divide(data, maximum - minimum, out=data)
+
+    # apply log stretch as in astropy
+    a = cfg.normalisation.log_scale_a
+    np.multiply(data, a, out=data)
+    np.add(data, 1.0, out=data)
+    np.log(data, out=data)
+    np.true_divide(data, np.log(a + 1), out=data)
     # Convert back to uint8 range
-    return _type_conversion(img_normalised, cfg)
+    np.clip(data, 0, 1, out=data)
+    return _type_conversion(data, cfg)
 
 
 def _linear_normalisation(data, cfg):
@@ -216,19 +251,26 @@ def _linear_normalisation(data, cfg):
 
     minimum = _compute_min_value(data, cfg=cfg)
     maximum = _compute_max_value(data, cfg=cfg)
-    viz = _get_astropy_viz()
     if minimum < maximum:
-        norm = viz["ImageNormalize"](
-            data, vmin=minimum, vmax=maximum, stretch=viz["LinearStretch"](), clip=True
-        )
+        # ensure data is float32 or float64
+        if not np.issubdtype(data.dtype, np.floating):
+            data = data.astype(np.float32)
+        try:
+            np.clip(data, minimum, maximum, out=data)
+        except:  # noqa: E722
+            # likely the user specified clips that do not match the dtype - this copies the array and casts
+            data = np.clip(data, minimum, maximum)
+        np.subtract(data, minimum, out=data)
+        np.true_divide(data, maximum - minimum, out=data)
     else:
         warnings.warn(
             "Image maximum is not larger than minimum, only doing conversion normalisation"
         )
         return _conversiononly_normalisation(data, cfg)
-    img_normalised = norm(data)  # range 0,1
+
     # Convert back to type range
-    return _type_conversion(img_normalised, cfg)
+    np.clip(data, 0, 1, out=data)
+    return _type_conversion(data, cfg)
 
 
 def _zscale_normalisation(data, cfg):
@@ -292,7 +334,11 @@ def _conversiononly_normalisation(data, cfg):
     maximum = _compute_max_value(data, cfg)
     minimum = _compute_min_value(data, cfg)
     # clip to cover edge cases
-    data = np.clip(data, minimum, maximum)
+    try:
+        np.clip(data, minimum, maximum, out=data)
+    except:  # noqa: E722
+        # likely the user specified clips that do not match the dtype - this copies the array and casts
+        data = np.clip(data, minimum, maximum)
 
     if data.dtype == cfg.output_dtype:
         if np.issubdtype(cfg.output_dtype, np.floating):
@@ -311,9 +357,13 @@ def _conversiononly_normalisation(data, cfg):
             return _type_conversion(data / 65535.0, cfg)  # 65535 = 2^16 - 1
         # if not matching dtype scale to [0,1] and convert
         if maximum > minimum:
-            data = (data - minimum) / (maximum - minimum)
+            # scale to 0,1
+            np.subtract(data, minimum, out=data)
+            # need result in a new copy as divide might induce dtype change
+            data = np.true_divide(data, maximum - minimum)
+
         else:
-            data = data - minimum  # should return 0
+            np.subtract(data, minimum, out=data)  # should return 0
         return _type_conversion(data, cfg)
 
     elif cfg.output_dtype == np.uint16:
@@ -332,10 +382,13 @@ def _conversiononly_normalisation(data, cfg):
 
     # ensure valid range
     if maximum > minimum:
-        viz = _get_astropy_viz()
-        norm = viz["ImageNormalize"](data, vmin=minimum, vmax=maximum, clip=True)
-        img_normalised = norm(data)  # range 0,1
-        return _type_conversion(img_normalised, cfg)
+        # ensure data is floating, normalise to 0,1 and clip
+        if not np.issubdtype(data.dtype, np.floating):
+            data = data.astype(np.float32)
+        np.subtract(data, minimum, out=data)
+        np.true_divide(data, maximum - minimum, out=data)
+        np.clip(data, 0, 1, out=data)
+        return _type_conversion(data, cfg)
     else:
         warnings.warn("Image maximum is not larger than minimum, returning zero array")
         # this is something that can happen with certain settings, so this should not raise an exception
@@ -364,8 +417,8 @@ def _expand(value, length: int) -> np.ndarray:
     return arr
 
 
-def _asinh_channel_norm(viz, channel_data, clip_percentile, scale, n_samples):
-    """Build the astropy asinh ImageNormalize for a single channel.
+def _percentile_clip_vmin_vmax(channel_data, clip_percentile, n_samples):
+    """Obtain percentile values from a sample of points based on a symmetric clip interval
 
     When ``n_samples`` is set and smaller than the channel's pixel count, the
     percentile bounds (vmin/vmax) are estimated from a deterministic strided
@@ -379,45 +432,45 @@ def _asinh_channel_norm(viz, channel_data, clip_percentile, scale, n_samples):
     clipping are identical to the exact path.
 
     Args:
-        viz (dict): The lazily-imported astropy.visualization components.
         channel_data (np.ndarray): A single channel of image data.
         clip_percentile (float): Percentile width passed to PercentileInterval.
-        scale (float): Asinh stretch scale for this channel.
         n_samples (int or None): Subsample size, or None to use all pixels.
 
     Returns:
-        astropy.visualization.ImageNormalize: Normaliser for the channel.
+        tuple: The lower and upper percentile values.
     """
-    if n_samples is not None and channel_data.size > n_samples:
-        flat = channel_data.reshape(-1)
-        # A constant stride over the C-order-flattened image aliases against the
-        # row length: when ``gcd(step, row_length) > 1`` the samples land on only
-        # a few columns, so vmin/vmax get estimated from a vertical sliver of the
-        # frame and miss spatially localised bright sources. Nudging ``step`` to
-        # be coprime with the row length makes the stride walk every column while
-        # keeping the sample count at ~``n_samples`` (so the speed-up is intact).
-        row_length = channel_data.shape[-1]
-        step = max(1, flat.size // n_samples)
-        tries = 0
-        while row_length > 1 and math.gcd(step, row_length) != 1 and tries < row_length:
-            step += 1
-            tries += 1
-        sample = flat[::step]
-        lower = (100.0 - clip_percentile) / 2.0
-        vmin, vmax = np.percentile(sample, (lower, 100.0 - lower))
-        return viz["ImageNormalize"](
-            channel_data,
-            vmin=vmin,
-            vmax=vmax,
-            stretch=viz["AsinhStretch"](scale),
-            clip=True,
-        )
-    return viz["ImageNormalize"](
-        channel_data,
-        interval=viz["PercentileInterval"](clip_percentile),
-        stretch=viz["AsinhStretch"](scale),
-        clip=True,
-    )
+    sample = _flatten_and_subsample(channel_data.copy(), n_samples)
+    lower = (100.0 - clip_percentile) / 2.0
+
+    k1 = int((lower / 100) * (sample.size - 1))
+    k2 = int(((100.0 - lower) / 100) * (sample.size - 1))
+    sample.partition((k1, k2))
+    return sample[k1], sample[k2]
+
+
+def _apply_asinh_norm(data, vmin, vmax, scale, cfg, recompute=False):
+    """Apply asinh normalisation to the data using the provided configuration.
+    First clip and limit to 0,1, then apply astropy like asinh
+    Returns:
+        np.ndarray: The transformed image data in [0,1]"""
+    denominator = vmax - vmin
+    if denominator == 0:
+        return np.zeros_like(data, dtype=np.float32)
+    try:
+        np.clip(data, vmin, vmax, out=data)
+    except:  # noqa: E722
+        data = np.clip(data, vmin, vmax)
+    np.subtract(data, vmin, out=data)
+    np.true_divide(data, (denominator), out=data)
+
+    np.true_divide(data, scale, out=data)
+    np.arcsinh(data, out=data)
+
+    denominator = cfg.normalisation.get("precomputed_asinh_inverse_asinh_scale", None)
+    if denominator is None or recompute:
+        denominator = np.arcsinh(1.0 / scale)
+    np.true_divide(data, denominator, out=data)
+    return data
 
 
 def _asinh_normalisation(data, cfg):
@@ -444,32 +497,80 @@ def _asinh_normalisation(data, cfg):
     """
     # Determine whether we are dealing with RGB+.... or not
     channels = data.shape[-1] if data.ndim == 3 else 1
-
     # Prepare per-channel parameters
+    # we want to keep it coloursafe if scale and clip both are lists of len 1
+    colour_safe = False
+    if isinstance(cfg.normalisation.asinh_scale, (list, tuple)) and isinstance(
+        cfg.normalisation.asinh_clip, (list, tuple)
+    ):
+        if len(cfg.normalisation.asinh_scale) == 1 and len(cfg.normalisation.asinh_clip) == 1:
+            colour_safe = True
+            # precompute for speedup
+            cfg.normalisation.precomputed_asinh_inverse_asinh_scale = np.arcsinh(
+                1.0 / cfg.normalisation.asinh_scale[0]
+            )
+
     scale = _expand(cfg.normalisation.asinh_scale, channels)
     clip = _expand(cfg.normalisation.asinh_clip, channels)
 
     # Get initial min and max and clip values if manual are set
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
-    data = np.clip(data, min_value, max_value)
+    try:
+        np.clip(data, min_value, max_value, out=data)
+    except:  # noqa: E722
+        # likely the user specified clips that do not match the dtype - this copies the array and casts
+        data = np.clip(data, min_value, max_value)
+    # ensure data is float32 or float64
+    if not np.issubdtype(data.dtype, np.floating):
+        data = data.astype(np.float32)
 
     # Apply asinh normalisation & percentile clipping, potentially per-channel
-    n_samples = cfg.normalisation.asinh_n_samples
-    viz = _get_astropy_viz()
     if channels == 1:
-        norm = _asinh_channel_norm(viz, data, clip[0], scale[0], n_samples)
-        normalised = norm(data)
+        vmin, vmax = _percentile_clip_vmin_vmax(
+            data, clip[0], cfg.normalisation.percentile_n_samples
+        )
+        normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
+    # Multi channel case: either colour-safe or per-channel normalisation
     else:
-        normalised = np.zeros_like(data, dtype=np.float32)
-        for c in range(channels):
-            norm = _asinh_channel_norm(viz, data[..., c], clip[c], scale[c], n_samples)
-            normalised[..., c] = norm(data[..., c])
+        if colour_safe:
+
+            # compute all vmins and vmaxs first and then take max/min over all
+            vmins = np.empty(channels)
+            vmaxs = np.empty(channels)
+
+            for channel_idx in range(channels):
+                vmins[channel_idx], vmaxs[channel_idx] = _percentile_clip_vmin_vmax(
+                    data[..., channel_idx],
+                    clip[channel_idx],
+                    cfg.normalisation.percentile_n_samples,
+                )
+
+            vmin = vmins.min()
+            vmax = vmaxs.max()
+
+            normalised = _apply_asinh_norm(data, vmin, vmax, scale[0], cfg)
+
+        else:
+            # normalise each channel individually
+            normalised = np.zeros_like(data, dtype=np.float32)
+
+            for channel_idx in range(channels):
+                vmin, vmax = _percentile_clip_vmin_vmax(
+                    data[..., channel_idx],
+                    clip[channel_idx],
+                    cfg.normalisation.percentile_n_samples,
+                )
+                normalised[..., channel_idx] = _apply_asinh_norm(
+                    data[..., channel_idx], vmin, vmax, scale[channel_idx], cfg, recompute=True
+                )
+
     # correct to 0-1 range and convert to uint8
-    min_value = np.min(normalised)
-    max_value = np.max(normalised)
-    if min_value < max_value:
-        return _type_conversion((normalised - min_value) / (max_value - min_value), cfg)
+    # check that the image is not entirely black
+    first = normalised.flat[0]
+    if np.any(normalised != first):
+        return _type_conversion(np.clip(normalised, 0.0, 1.0), cfg)
+
     else:
 
         warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
@@ -508,8 +609,17 @@ def _apply_midtones_on_normalised_data(x, m):
     return output
 
 
-def _find_mean_of_normalised(normalised_data, cfg):
-    """Find the midtones balance parameter m for the given normalised data."""
+def _find_mean_of_normalised(normalised_data, cfg, channel_index):
+    """Find the midtones balance parameter m for the given normalised data.
+
+    Args:
+        normalised_data is expected to be in the range [0, 1] and m is computed based on the mean of the data.
+        cfg is a fitsbolt configuration object that contains the desired mean for the midtones normalisation.
+        channel_index is the index of the channel for which to compute the midtones balance parameter.
+
+    Returns:
+        float: The midtones balance parameter m.
+    """
     if cfg.normalisation.midtones.crop is not None:
         h, w = cfg.normalisation.midtones.crop
         assert (
@@ -520,7 +630,11 @@ def _find_mean_of_normalised(normalised_data, cfg):
     else:
         normalised_data_cut = normalised_data
     x = np.mean(normalised_data_cut)
-    alpha = cfg.normalisation.midtones.desired_mean
+
+    # failsafe to avoid crashes when channel is longer than expected
+    if channel_index >= len(cfg.normalisation.midtones.desired_mean):
+        channel_index = -1
+    alpha = cfg.normalisation.midtones.desired_mean[channel_index]
     return (x - alpha * x) / (x - 2 * alpha * x + alpha)
 
 
@@ -539,52 +653,129 @@ def _midtones_normalisation(data, cfg):
     # Get initial min and max and clip values if manual are set
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
-    data = np.clip(data, min_value, max_value)
+    if min_value >= max_value:
+        warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
+        return _conversiononly_normalisation(data, cfg=cfg)
+    try:
+        np.clip(data, min_value, max_value, out=data)
+    except:  # noqa: E722
+        # likely the user specified clips that do not match the dtype - this copies the array and casts
+        data = np.clip(data, min_value, max_value)
+
+    # ensure data is float32 or float64
+    if not np.issubdtype(data.dtype, np.floating):
+        data = data.astype(np.float32)
 
     data_is_2d = False
     if data.ndim == 2:
         # create dummy channel index
         data_is_2d = True
         data = np.expand_dims(data, axis=-1)
-    # create a for loop over the channel to calculate m and apply MTF on a channel basis
-    for c in range(data.shape[-1]):
-        # do a channel-wise percentile clip
-        if cfg.normalisation.midtones.percentile:
-            data[..., c] = np.clip(
-                data[..., c],
-                data[..., c].min(),
-                np.percentile(data[..., c], cfg.normalisation.midtones.percentile),
-            )
-        # Find the appropriate midtones balance parameter m
-        max_value = _compute_max_value(data[..., c], cfg)
-        min_value = _compute_min_value(data[..., c], cfg)
-        # include necessary clipping
-        data[..., c] = np.clip(data[..., c], min_value, max_value)
 
+    # if there is only one percentile and 1 desired mean - use coulr safe mode
+    # if the user specifies more than one percentile or more than one desired mean, channels are normalised individually
+    colour_safe = (
+        len(cfg.normalisation.midtones.percentile) == 1
+        and len(cfg.normalisation.midtones.desired_mean) == 1
+    )
+
+    if colour_safe:
+        # create a for loop over the channel to calculate m and apply MTF on a channel basis
+        max_values = np.empty(data.shape[-1])
+        min_values = np.empty(data.shape[-1])
+
+        for channel_idx in range(data.shape[-1]):
+            # do a channel-wise percentile clip
+
+            if cfg.normalisation.midtones.percentile:
+                min_value, max_value = _percentile_clip_vmin_vmax(
+                    data[..., channel_idx],
+                    cfg.normalisation.midtones.percentile[0],
+                    cfg.normalisation.percentile_n_samples,
+                )
+            else:
+                # Find the appropriate midtones balance parameter m
+                max_value = _compute_max_value(data[..., channel_idx], cfg)
+                min_value = _compute_min_value(data[..., channel_idx], cfg)
+            max_values[channel_idx] = max_value
+            min_values[channel_idx] = min_value
+        # include necessary clipping
+        min_value = np.min(min_values)
+        max_value = np.max(max_values)
+        try:
+            np.clip(data, min_value, max_value, out=data)
+        except:  # noqa: E722
+            # likely the user specified clips that do not match the dtype - this copies the array and casts
+            data = np.clip(data, min_value, max_value)
         # Skip MTF for constant channels (avoids division by zero)
         if min_value >= max_value:
-            data[..., c] = 0.0
-            continue
+            data[...] = 0.0
 
-        normalised_channel = (data[..., c] - min_value) / (max_value - min_value)
+        else:
+            np.subtract(data, min_value, out=data)
+            np.true_divide(data, max_value - min_value, out=data)
+            m = _find_mean_of_normalised(data, cfg, channel_index=0)
 
-        m = _find_mean_of_normalised(normalised_channel, cfg)
-        # Apply the MTF to the image
-        transformed_channel = _apply_midtones_on_normalised_data(normalised_channel, m)
+            # Apply the MTF to the image
+            data = _apply_midtones_on_normalised_data(data, m)
 
-        data[..., c] = transformed_channel
+    # if user wants the non-colousafe mode
+    else:
+        # create a for loop over the channel to calculate m and apply MTF on a channel basis
+        for channel_idx in range(data.shape[-1]):
+            # do a channel-wise percentile clip
+            if cfg.normalisation.midtones.percentile:
+                if channel_idx >= len(cfg.normalisation.midtones.percentile):
+                    percentile = cfg.normalisation.midtones.percentile[-1]
+                else:
+                    percentile = cfg.normalisation.midtones.percentile[channel_idx]
+                min_value, max_value = _percentile_clip_vmin_vmax(
+                    data[..., channel_idx],
+                    percentile,
+                    cfg.normalisation.percentile_n_samples,
+                )
+            else:
+                # Find the appropriate midtones balance parameter m
+                max_value = _compute_max_value(data[..., channel_idx], cfg)
+                min_value = _compute_min_value(data[..., channel_idx], cfg)
+            # include necessary clipping
+            data[..., channel_idx] = np.clip(data[..., channel_idx], min_value, max_value)
+
+            # Skip MTF for constant channels (avoids division by zero)
+            if min_value >= max_value:
+                data[..., channel_idx] = 0.0
+                continue
+
+            np.subtract(data[..., channel_idx], min_value, out=data[..., channel_idx])
+            np.true_divide(
+                data[..., channel_idx], max_value - min_value, out=data[..., channel_idx]
+            )
+
+            m = _find_mean_of_normalised(data[..., channel_idx], cfg, channel_index=channel_idx)
+            # Apply the MTF to the image
+            transformed_channel = _apply_midtones_on_normalised_data(data[..., channel_idx], m)
+
+            data[..., channel_idx] = transformed_channel
+            data[..., channel_idx] = transformed_channel
     if data_is_2d:
         data = np.squeeze(data, axis=-1)
     # scale entire image to 0,1 and do type conversion
     max_value = _compute_max_value(data, cfg)
     min_value = _compute_min_value(data, cfg)
     if min_value < max_value:
-        return _type_conversion((data - min_value) / (max_value - min_value), cfg)
+        try:
+            np.clip(data, min_value, max_value, out=data)
+        except:  # noqa: E722
+            # likely the user specified clips that do not match the dtype - this copies the array and casts
+            data = np.clip(data, min_value, max_value)
+        np.subtract(data, min_value, out=data)
+        np.true_divide(data, max_value - min_value, out=data)
+        np.clip(data, 0, 1, out=data)
+        return _type_conversion(data, cfg)
     else:
+        warnings.warn("Image maximum is not larger than minimum, returning zeros.")
 
-        warnings.warn("Image maximum is not larger than minimum, returning conversion only.")
-
-        return _conversiononly_normalisation(data, cfg=cfg)
+        return np.zeros_like(data, dtype=cfg.output_dtype)
 
 
 def _normalise_image(data, cfg):
@@ -652,6 +843,8 @@ def normalise_images(
     norm_maximum_value=None,
     norm_minimum_value=None,
     norm_crop_for_maximum_value=None,
+    norm_minmax_samples=None,
+    norm_percentile_samples=None,
     norm_log_calculate_minimum_value=False,
     norm_log_scale_a=1000.0,
     norm_asinh_scale=[0.7],
@@ -663,8 +856,8 @@ def normalise_images(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
-    norm_midtones_percentile=99.8,
-    norm_midtones_desired_mean=0.2,
+    norm_midtones_percentile=[99.8],
+    norm_midtones_desired_mean=[0.2],
     norm_midtones_crop=None,
     desc="Normalising images",
     show_progress=True,
@@ -683,6 +876,15 @@ def normalise_images(
         norm_minimum_value (float, optional): Minimum value for normalisation. Defaults to None implying dynamic.
         norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
                                     the maximum value inside. Defaults to None.
+        norm_minmax_samples (int, optional): If set, the min/max bounds (vmin/vmax) are estimated
+                                            from a deterministic strided subsample of this many pixels per
+                                            channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+        norm_percentile_samples (int, optional): If set, the percentile bounds (vmin/vmax) are estimated
+                                                from a deterministic strided subsample of this many pixels per
+                                                channel instead of all pixels. Trades a small bias in the bright
+                                                tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+
         Default Log settings
             norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
                                 Defaults to False.
@@ -706,9 +908,11 @@ def normalise_images(
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
 
         Default MTF settings:
-            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
-                                                        Defaults to 99.8.
-            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_percentile (list(float), optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
+                                                        Defaults to [99.8].
+            norm_midtones_desired_mean (list(float), optional): Desired mean for MTF, in [0, 1]. Defaults to [0.2].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
             norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
                                                     Defaults to None.
 
@@ -752,6 +956,8 @@ def normalise_images(
         norm_log_calculate_minimum_value=norm_log_calculate_minimum_value,
         norm_log_scale_a=norm_log_scale_a,
         norm_crop_for_maximum_value=norm_crop_for_maximum_value,
+        norm_minmax_samples=norm_minmax_samples,
+        norm_percentile_samples=norm_percentile_samples,
         norm_asinh_scale=norm_asinh_scale,
         norm_asinh_clip=norm_asinh_clip,
         norm_asinh_n_samples=norm_asinh_n_samples,

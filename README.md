@@ -161,6 +161,9 @@ images = fitsbolt.read_images(
 
 #### `fitsbolt.normalise_images()`
 Normalises image arrays using various astronomical-optimized methods.
+Per default all normalisations respect relative colours and are applied to all channels simulataneously.
+For Asinh and Midtones the user can provide a list of n_channels values fro percentile clipping or the scale/desired_mean parameters, which 
+in turn changes the normalisation ot a per-channel basis, for cases where, e.g. channel units differ.
 
 ```python
 normalised = fitsbolt.normalise_images(
@@ -181,7 +184,7 @@ Resizes image arrays to specified dimensions.
 resized = fitsbolt.resize_images(
     images=raw_images,
     size=[224, 224],           # Target size [height, width]
-    interpolation_order=1,     # 0-5, higher = smoother
+    interpolation_order=1,     # 0-4: nearest, linear, cubic, lanczos, 4=inter area (alwayse used for downsizing)
     output_dtype=np.float32,   # Recommended: float32 for processing chain
     show_progress=True
 )
@@ -336,7 +339,8 @@ result = fitsbolt.load_and_process_images(
 
 ### Normalisation Methods
 
-fitsbolt provides several normalisation methods for handling astronomical images with high dynamic range:
+fitsbolt provides several normalisation methods for handling astronomical images with high dynamic range, which are per default coloursafe.
+Providing different clips and scales for channels overrides the colour preservation:
 
 1. **CONVERSION_ONLY**:
    - If input dtype already matches the requested output dtype: No conversion applied
@@ -384,7 +388,8 @@ fitsbolt provides several normalisation methods for handling astronomical images
 #### General Parameters
 - **output_dtype**: Data type for output images (default: np.uint8)
 - **size**: Target size for resizing [height, width]
-- **interpolation_order**: Order of interpolation for resizing (0-5, default: 1)
+- **interpolation_order**: Order of interpolation for resizing (0-4, default: 1)
+    - 0: cv2.INTER_NEAREST, 1: cv2.INTER_LINEAR, 2: cv2.INTER_CUBIC, 3: cv2.INTER_LANCZOS4, 4: cv2.INTER_AREA # always used for downscaling
 - **num_workers**: Number of worker threads for parallel loading
 
 #### FITS File Parameters
@@ -398,14 +403,21 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **norm_maximum_value**: Maximum value for normalisation (overrides auto-detection)
 - **norm_minimum_value**: Minimum value for normalisation (overrides auto-detection)
 - **norm_crop_for_maximum_value**: Tuple (height, width) to crop around center for max value calculation
+- **norm_minmax_samples** (int, optional): If set, the min/max bounds (vmin/vmax) are estimated from a deterministic strided 
+                                            subsample of this many pixels per channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+- **norm_percentile_samples** (int, optional): If set, the percentile bounds (vmin/vmax) are estimated from a deterministic strided 
+                                            subsample of this many pixels per channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
 
 ##### Log Normalisation Parameters
 - **norm_log_calculate_minimum_value**: Whether to calculate minimum for log scaling (default: False)
 - **norm_log_scale_a**: Scale factor 'a' for astropy LogStretch (default: 1000.0)
 
 ##### Asinh Normalisation Parameters
-- **norm_asinh_scale**: Channel-wise stretch factors for asinh normalisation (default: \[0.7\])
+- **norm_asinh_scale**: Channel-wise stretch factors for asinh normalisation (default: \[0.7\]). If len>1 coulours will be affected.
 - **norm_asinh_clip**: Channel-wise percentile clipping for asinh normalisation (default: \[99.8\])
+                       Clips symmertically from both sides of the distribution. If len>1 coulours will be affected.
 
 ##### ZScale Normalisation Parameters
 - **norm_zscale_n_samples**: Number of samples for zscale normalisation (default: 1000)
@@ -416,6 +428,7 @@ fitsbolt provides several normalisation methods for handling astronomical images
 - **norm_zscale_max_iter**: Maximum number of iterations for zscale normalisation (default: 5)
 
 ##### Midtones Normalisation Parameters
-- **norm_midtones_percentile**: Percentile for clipping in each channel (default: 99.8)
-- **norm_midtones_desired_mean**: Target mean brightness value between 0 and 1 (default: 0.2)
+- **norm_midtones_percentile**: List of percentile for clipping applied (default: 99.8). If len>1 coulours will be affected.
+                                Clips symmertically from both sides of the distribution.
+- **norm_midtones_desired_mean**: List of target mean brightness value between 0 and 1 (default: 0.2).  If len>1 coulours will be affected
 - **norm_midtones_crop**: Optional crop dimensions (height, width) for calculating the mean
