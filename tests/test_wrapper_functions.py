@@ -277,6 +277,16 @@ class TestWrapperFunctionEdgeCases:
         result_3 = resize_images([img], size=[100, 100], interpolation_order=3, show_progress=False)
         assert result_3[0].shape[:2] == (100, 100), "Should resize with order 3"
 
+        # test non square resize, input is a list, output also
+        result_non_square = resize_images(
+            [img], size=[50, 100], interpolation_order=3, show_progress=False
+        )
+        assert result_non_square[0].shape == (
+            50,
+            100,
+            img.shape[-1],
+        ), "Should resize to non-square dimensions"
+
     def test_load_and_process_images_with_no_cfg_provided(self):
         """Test load_and_process_images when no cfg is provided - should create one internally."""
         # This tests the cfg=None branch in load_and_process_images
