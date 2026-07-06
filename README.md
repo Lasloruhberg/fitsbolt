@@ -181,7 +181,7 @@ Resizes image arrays to specified dimensions.
 resized = fitsbolt.resize_images(
     images=raw_images,
     size=[224, 224],           # Target size [height, width]
-    interpolation_order=1,     # 0-5, higher = smoother
+    interpolation_order=1,     # 0-4: nearest, linear, cubic, lanczos, 4=inter area (alwayse used for downsizing)
     output_dtype=np.float32,   # Recommended: float32 for processing chain
     show_progress=True
 )
@@ -384,7 +384,8 @@ fitsbolt provides several normalisation methods for handling astronomical images
 #### General Parameters
 - **output_dtype**: Data type for output images (default: np.uint8)
 - **size**: Target size for resizing [height, width]
-- **interpolation_order**: Order of interpolation for resizing (0-5, default: 1)
+- **interpolation_order**: Order of interpolation for resizing (0-4, default: 1)
+    - 0: cv2.INTER_NEAREST, 1: cv2.INTER_LINEAR, 2: cv2.INTER_CUBIC, 3: cv2.INTER_LANCZOS4, 4: cv2.INTER_AREA # always used for downscaling
 - **num_workers**: Number of worker threads for parallel loading
 
 #### FITS File Parameters
