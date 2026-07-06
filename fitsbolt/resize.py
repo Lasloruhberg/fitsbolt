@@ -11,17 +11,33 @@ from tqdm import tqdm
 
 from .cfg.create_config import create_config
 from .cfg.logger import logger
-import cv2
 
 # Maps the `interpolation` config value to the cv2 upscaling kernel flag.
 # Downscaling always uses cv2.INTER_AREA regardless of this setting.
-_CV2_UPSCALE_INTERPOLATION = {
-    0: cv2.INTER_NEAREST,
-    1: cv2.INTER_LINEAR,
-    2: cv2.INTER_CUBIC,
-    3: cv2.INTER_LANCZOS4,
-    4: cv2.INTER_AREA,  # always used for downscaling
-}
+# Lazy import for cv2
+_cv2_resize = None
+_CV2_UPSCALE_INTERPOLATION = None
+
+
+def _get_cv2_resize():
+    """Lazy import of cv2.resize."""
+    global _cv2_resize
+    global _CV2_UPSCALE_INTERPOLATION
+    if _cv2_resize is None:
+        from cv2 import resize as cv2_resize
+
+        _cv2_resize = cv2_resize
+    if _CV2_UPSCALE_INTERPOLATION is None:
+        from cv2 import INTER_NEAREST, INTER_LINEAR, INTER_CUBIC, INTER_LANCZOS4, INTER_AREA
+
+        _CV2_UPSCALE_INTERPOLATION = {
+            0: INTER_NEAREST,
+            1: INTER_LINEAR,
+            2: INTER_CUBIC,
+            3: INTER_LANCZOS4,
+            4: INTER_AREA,  # always used for downscaling
+        }
+    return _cv2_resize, _CV2_UPSCALE_INTERPOLATION
 
 
 def _worker_resize_image(image, cfg):
@@ -154,16 +170,16 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
         logger.warning("Received an empty image, returning as is.")
         raise ValueError("Image is empty, cannot resize.")
     if cfg.size is not None and image.shape[:2] != tuple(cfg.size):
-        resize_func = cv2.resize
+        resize_func, _cv2_interpolation_dict = _get_cv2_resize()
 
         upscale_interpolation = (
-            _CV2_UPSCALE_INTERPOLATION[cfg.interpolation_order]
+            _cv2_interpolation_dict[cfg.interpolation_order]
             if cfg.interpolation_order is not None
-            else cv2.INTER_LINEAR
+            else _cv2_interpolation_dict[1]  # Default to linear interpolation if not specified
         )
 
         downscaling = cfg.size[0] < image.shape[0] or cfg.size[1] < image.shape[1]
-        interpolation_flag = cv2.INTER_AREA if downscaling else upscale_interpolation
+        interpolation_flag = _cv2_interpolation_dict[4] if downscaling else upscale_interpolation
         # cv2 drops channel dimension for single-channel images, so we need to add it back
         readd_channel = False
         if image.ndim == 3 and image.shape[2] == 1:
@@ -172,7 +188,7 @@ def _resize_image(image, cfg, output_dtype=None, do_type_conversion=True):
         # cv2 internally returns the input dtype
         image = resize_func(
             np.ascontiguousarray(image, dtype=np.float32),
-            cfg.size,
+            (cfg.size[1], cfg.size[0]),  # cv2 expects (width, height)
             interpolation=interpolation_flag,
         )
         if readd_channel:
