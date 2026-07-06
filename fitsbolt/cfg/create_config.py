@@ -24,6 +24,8 @@ def create_config(
     normalisation_method=NormalisationMethod.CONVERSION_ONLY,
     channel_combination=None,
     num_workers=4,
+    norm_minmax_samples=None,
+    norm_percentile_samples=None,
     norm_maximum_value=None,
     norm_minimum_value=None,
     norm_log_calculate_minimum_value=False,
@@ -38,8 +40,8 @@ def create_config(
     norm_zscale_min_pixels=5,
     norm_zscale_krej=2.5,
     norm_zscale_max_iter=5,
-    norm_midtones_percentile=99.8,
-    norm_midtones_desired_mean=0.2,
+    norm_midtones_percentile=[99.8],
+    norm_midtones_desired_mean=[0.2],
     norm_midtones_crop=None,
     log_level="WARNING",
     force_dtype=True,
@@ -66,6 +68,15 @@ def create_config(
         norm_crop_for_maximum_value (tuple, optional): Crops the image to a size of (h,w) around the center to compute
                                     the maximum value inside. Defaults to None.
 
+        norm_minmax_samples (int, optional): If set, the min/max bounds (vmin/vmax) are estimated
+                                            from a deterministic strided subsample of this many pixels per
+                                            channel instead of all pixels. Trades a small bias in the bright
+                                            tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+        norm_percentile_samples (int, optional): If set, the percentile bounds (vmin/vmax) are estimated
+                                                from a deterministic strided subsample of this many pixels per
+                                                channel instead of all pixels. Trades a small bias in the bright
+                                                tail for a large reduction in cost. Defaults to None (use all pixels, exact).
+
         Default Log settings
             norm_log_calculate_minimum_value (bool, optional): If True, calculates the minimum value for log scaling.
                                 Defaults to False.
@@ -76,10 +87,10 @@ def create_config(
             norm_asinh_clip (list, optional): Clip values for asinh normalisation,
                                                 should have the length of n_output_channels or 1. Defaults to [99.8].
             norm_asinh_n_samples (int, optional): If set, the asinh percentile bounds (vmin/vmax) are estimated
-                                                from a deterministic strided subsample of this many pixels per
-                                                channel instead of all pixels. Trades a small bias in the bright
-                                                tail for a large reduction in cost (the percentile dominates the
-                                                asinh stretch). Defaults to None (use all pixels, exact).
+                                                from a deterministic strided subsample.
+                                                Is identical to norm_percentile_samples.
+                                                Kept for backwards compatibility.
+                                                Defaults to None (use all pixels, exact).
         Default ZScale settings (from astropy ZScaleInterval):
             norm_zscale_n_samples (int, optional): Number of samples for zscale normalisation. Defaults to 1000.
             norm_zscale_contrast (float, optional): Contrast for zscale normalisation. Defaults to 0.25.
@@ -90,9 +101,11 @@ def create_config(
             norm_zscale_max_iter (int, optional): Maximum number of iterations for zscale normalisation. Defaults to 5.
 
         Default MTF settings:
-            norm_midtones_percentile (float, optional): Percentile for MTF applied to each channel, in ]0., 100.].
-                                                        Defaults to 99.8.
-            norm_midtones_desired_mean (float, optional): Desired mean for MTF, in [0, 1]. Defaults to 0.2.
+            norm_midtones_percentile (list(float), optional): Percentile for MTF applied to each channel, in ]0., 100.].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
+                                                        Defaults to [99.8].
+            norm_midtones_desired_mean (list(float), optional): Desired mean for MTF, in [0, 1]. Defaults to [0.2].
+                                                        Length one for colour-safe or lenght n_channels for per-channel MTF.
             norm_midtones_crop (tuple, optional): Crops the image to a size of (h,w) around the center to determine the mean in
                                                     Defaults to None.
 
@@ -119,7 +132,7 @@ def create_config(
     # Normalisation settings
     cfg.normalisation_method = normalisation_method
     # Optional normalisation settings
-    cfg.normalisation = DotMap()
+    cfg.normalisation = DotMap(_dynamic=False)
     cfg.normalisation.maximum_value = norm_maximum_value  # None or float
     cfg.normalisation.minimum_value = norm_minimum_value  # None or float
     cfg.normalisation.crop_for_maximum_value = (
@@ -135,7 +148,22 @@ def create_config(
     cfg.normalisation.asinh_clip = norm_asinh_clip
     # int or None, number of pixels to subsample when estimating the asinh percentile bounds
     # (None = use all pixels, exact):
-    cfg.normalisation.asinh_n_samples = norm_asinh_n_samples
+    # check that not both norm_asinh_n_samples and norm_percentile_samples are set,
+    # if so raise a warning and use norm_asinh_n_samples
+    if norm_asinh_n_samples is not None and norm_percentile_samples is not None:
+        warnings.warn(
+            "Both norm_asinh_n_samples and norm_percentile_samples are set. Using norm_percentile_samples."
+        )
+    # set a sample size
+    norm_samples = (
+        norm_percentile_samples if norm_percentile_samples is not None else norm_asinh_n_samples
+    )
+
+    cfg.normalisation.asinh_n_samples = norm_samples
+    # int or None, number of pixels to subsample when estimating the percentile bounds
+    cfg.normalisation.percentile_n_samples = norm_samples
+    # int or None, number of pixels to subsample when estimating the min/max bounds
+    cfg.normalisation.minmax_n_samples = norm_minmax_samples
 
     # ZSCALE settings
     cfg.normalisation.zscale = DotMap()
@@ -151,9 +179,15 @@ def create_config(
 
     # MTF settings
     cfg.normalisation.midtones = DotMap()
-    # float, in ]0., 100.] : percentile for MTF applied to each channel
+    # List of floats, in ]0., 100.] : percentile for MTF applied to each channel, length 1 for colour-safe
+    # or length n_channels for per-channel MTF
+    # convert float or int to list of length 1 (keeps backwards compatibility)
+    if isinstance(norm_midtones_percentile, (float, int)):
+        norm_midtones_percentile = [norm_midtones_percentile]
     cfg.normalisation.midtones.percentile = norm_midtones_percentile
-    # float in [0,1], desired mean for MTF
+    # List of floats in [0,1], desired mean for MTF, lenght 1 for colour-safe or lenght n_channels for per-channel MTF
+    if isinstance(norm_midtones_desired_mean, (float, int)):
+        norm_midtones_desired_mean = [norm_midtones_desired_mean]
     cfg.normalisation.midtones.desired_mean = norm_midtones_desired_mean
     cfg.normalisation.midtones.crop = norm_midtones_crop
 
@@ -252,7 +286,9 @@ def _return_required_and_optional_keys():
         "normalisation": ["special_DotMap", None, None, False, None],
         "normalisation.asinh_scale": ["special_asinh_scale", None, None, False, None],
         "normalisation.asinh_clip": ["special_asinh_clip", None, None, False, None],
-        "normalisation.asinh_n_samples": [int, 1, None, True, None],
+        "normalisation.asinh_n_samples": [int, 100, None, True, None],
+        "normalisation.percentile_n_samples": [int, 100, None, True, None],
+        "normalisation.minmax_n_samples": [int, 100, None, True, None],
         "interpolation_order": [int, 0, 4, False, None],  # 0-4 for opencv2 interpolation
         "output_dtype": [type, None, None, False, None],
         # Optional numeric parameters
@@ -272,8 +308,20 @@ def _return_required_and_optional_keys():
         "normalisation.zscale.krej": [float, 0.0001, None, True, None],
         "normalisation.zscale.max_iterations": [int, 1, 100, True, None],
         "normalisation.midtones": ["special_DotMap", None, None, True, None],
-        "normalisation.midtones.percentile": [float, 0.0, 100.0, True, None],
-        "normalisation.midtones.desired_mean": [float, 0.0, 1.0, True, None],
+        "normalisation.midtones.percentile": [
+            "special_midtones_percentile",
+            None,
+            None,
+            True,
+            None,
+        ],
+        "normalisation.midtones.desired_mean": [
+            "special_midtones_desired_mean",
+            None,
+            None,
+            True,
+            None,
+        ],
         "normalisation.midtones.crop": ["special_crop", None, None, True, None],
     }
 
@@ -495,6 +543,26 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                     )
                 if not (0 < value <= 100):
                     raise ValueError(f"{param_name} must be in range ]0,100.], got: {value}")
+        elif dtype == "special_midtones_percentile":
+            # check that it is a list of a number in ]0,100.]
+            if not isinstance(value, (list, tuple, int, float)):
+                raise ValueError(
+                    f"{param_name} must be a number or list/tuple of n_output_channels numbers in ]0,100.],"
+                    + f" got {type(value).__name__}"
+                )
+            for val in value:  # type: ignore
+                if not (0 < val <= 100):
+                    raise ValueError(f"{param_name} values must be in range ]0,100.], got: {value}")
+        elif dtype == "special_midtones_desired_mean":
+            # check that it is a list of a number in [0,1]
+            if not isinstance(value, (list, tuple, int, float)):
+                raise ValueError(
+                    f"{param_name} must be a number or list/tuple of n_output_channels numbers in [0,1],"
+                    + f" got {type(value).__name__}"
+                )
+            for val in value:  # type: ignore
+                if not (0 <= val <= 1):
+                    raise ValueError(f"{param_name} values must be in range [0,1], got: {value}")
 
         elif dtype == "special_crop":
             if value is not None:
