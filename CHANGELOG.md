@@ -1,4 +1,10 @@
 # Changelog
+## [0.3.1] - 2026-07-27
+
+### Fixed
+
+- Fixed bug that induced a TypeError when trying to create a config when working on non fits inputs.
+
 ## [0.3.0] - 2026-07-06
 
 ### Added
@@ -118,6 +124,7 @@
 - intial publication
 
 ## Version overview
+[0.3.1]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Lasloruhberg/fitsbolt/compare/v0.1.6...v0.2.0
