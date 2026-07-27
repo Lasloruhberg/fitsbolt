@@ -611,12 +611,13 @@ def validate_config(cfg: DotMap, check_paths: bool = True) -> None:
                 raise ValueError(
                     f"{param_name} must have {cfg.n_output_channels} rows, got {value.shape[0]}"
                 )
-            if not value.shape[1] == len(cfg.fits_extension) and cfg.fits_extension is not None:
-                raise ValueError(
-                    f"{param_name} channel mapping shape must reflect input and output shapes:"
-                    + f" expected n output {cfg.n_output_channels} & n input {len(cfg.fits_extension)}"
-                    + f" got {value.shape[0]}x {value.shape[1]}"
-                )
+            if cfg.fits_extension is not None:
+                if not value.shape[1] == len(cfg.fits_extension):
+                    raise ValueError(
+                        f"{param_name} channel mapping shape must reflect input and output shapes:"
+                        + f" expected n output {cfg.n_output_channels} & n input {len(cfg.fits_extension)}"
+                        + f" got {value.shape[0]}x {value.shape[1]}"
+                    )
 
         else:
             raise ValueError(f"Unknown data type for {param_name}: {dtype}")
